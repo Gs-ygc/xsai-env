@@ -41,4 +41,16 @@ apt install -y \
 sh -c "curl -L https://repo1.maven.org/maven2/com/lihaoyi/mill-dist/1.0.4/mill-dist-1.0.4-mill.sh > /usr/local/bin/mill && chmod +x /usr/local/bin/mill"
 
 # We need to use Verilator 4.204+, so we install Verilator manually
-source $(dirname "$0")/install-verilator.sh
+INSTALL_VERILATOR=true
+if command -v verilator >/dev/null 2>&1; then
+    CURRENT_VER=$(verilator --version | head -n1 | awk '{print $2}')
+    REQUIRED_VER="4.204"
+    if [ "$(printf '%s\n' "$REQUIRED_VER" "$CURRENT_VER" | sort -V | head -n1)" = "$REQUIRED_VER" ]; then
+        echo "Verilator $CURRENT_VER is already installed."
+        INSTALL_VERILATOR=false
+    fi
+fi
+
+if [ "$INSTALL_VERILATOR" = true ]; then
+    source $(dirname "$0")/install-verilator.sh
+fi
