@@ -20,3 +20,6 @@
 	path = llvm-project-ame
 	url = https://github.com/xyyy1420/llvm-project-ame.git
 	branch = triton-commit-hash
+[submodule "riscv-matrix-spec"]
+	path = riscv-matrix-spec
+	url = https://github.com/OpenXiangShan/riscv-matrix-spec
