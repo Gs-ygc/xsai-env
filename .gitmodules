@@ -4,7 +4,7 @@
 	branch = feat-integrate-cute
 [submodule "nexus-am"]
 	path = nexus-am
-	url = https://github.com/yu-yake2002/nexus-am.git
+	url = https://github.com/Gs-ygc/nexus-am.git
 [submodule "DRAMsim3"]
 	path = DRAMsim3
 	url = https://github.com/OpenXiangShan/DRAMsim3.git
