@@ -11,6 +11,7 @@ apt install -y \
     vim \
     wget \
     git \
+    git-lfs \
     tmux \
     make \
     g++ \

@@ -4,6 +4,7 @@
 
 # Init submodules
 git submodule update --init --recursive DRAMsim3 NEMU NutShell nexus-am llvm-project-ame
+cd nexus-am && git lfs pull; cd -;
 git submodule update --init XSAI && make -C XSAI init;
 
 # Setup XiangShan environment variables

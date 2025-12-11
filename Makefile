@@ -36,7 +36,7 @@ xsai:
 	$(MAKE) -C $(NOOP_HOME) emu -j CONFIG=DefaultMatrixConfig WITH_CHISELDB=1 WITH_CONSTANTIN=0 EMU_THREADS=8 EMU_TRACE=fst
 
 test-matrix:
-	$(MAKE) -C $(AM_HOME)/tests/matrixsimpletest ARCH=riscv64-xs TOOLCHAIN=LLVM LLVM_HOME=$(LLVM_HOME)
+	$(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(AM_HOME)/apps/llama/llama-riscv64-xs.bin
 
 update:
 	./scripts/update-submodule.sh
