@@ -1,7 +1,7 @@
 # This script will check if XiangShan develop environment has been setup correctly
 
 # Setup XiangShan environment variables
-source env.sh
+source $(dirname "$0")/../env.sh
 # OPTIONAL: export them to .bashrc
 
 # NutShell uses similiar develop environment, we use it to test

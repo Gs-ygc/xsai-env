@@ -3,11 +3,11 @@
 # This script will setup XiangShan develop environment automatically
 
 # Init submodules
-git submodule update --init --recursive DRAMsim3 NEMU NutShell nexus-am
-git submodule update --init XiangShan && make -C XiangShan init;
+git submodule update --init --recursive DRAMsim3 NEMU NutShell nexus-am llvm-project-ame
+git submodule update --init XSAI && make -C XSAI init;
 
 # Setup XiangShan environment variables
-source env.sh
+source $(dirname "$0")/../env.sh
 # OPTIONAL: export them to .bashrc
 
 echo XS_PROJECT_ROOT: ${XS_PROJECT_ROOT}

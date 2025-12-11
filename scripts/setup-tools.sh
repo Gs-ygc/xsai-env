@@ -1,3 +1,4 @@
+#!/bin/bash
 # This script will setup tools used by XiangShan
 # tested on ubuntu 20.04 Docker image
 
@@ -30,12 +31,14 @@ apt install -y \
     libsqlite3-dev \
     zstd \
     libzstd-dev \
+    cmake \
+    ninja-build \
     python-is-python3 \
     python3-protobuf \
     python3-grpc-tools
-    
+
 
 sh -c "curl -L https://repo1.maven.org/maven2/com/lihaoyi/mill-dist/1.0.4/mill-dist-1.0.4-mill.sh > /usr/local/bin/mill && chmod +x /usr/local/bin/mill"
 
 # We need to use Verilator 4.204+, so we install Verilator manually
-source ./install-verilator.sh
+source $(dirname "$0")/install-verilator.sh
