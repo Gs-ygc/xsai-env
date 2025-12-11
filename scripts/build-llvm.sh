@@ -20,7 +20,7 @@ if [ -z "$RISCV" ]; then
     echo "设置 RISCV=$RISCV"
 fi
 mkdir -p $RISCV
-cd $XS_PROJECT_ROOT
+cd $XS_PROJECT_ROOT/llvm-project-ame
 # 创建构建目录
 mkdir -p build && cd build
 
