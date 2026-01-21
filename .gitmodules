@@ -11,7 +11,7 @@
 [submodule "NEMU"]
 	path = NEMU
 	url = https://github.com/yu-yake2002/NEMU-Matrix.git
-	branch = master
+	branch = dev-v0.6
 [submodule "NutShell"]
 	path = NutShell
 	url = https://github.com/OSCPU/NutShell
@@ -23,3 +23,7 @@
 [submodule "riscv-matrix-spec"]
 	path = riscv-matrix-spec
 	url = https://github.com/OpenXiangShan/riscv-matrix-spec
+[submodule "qemu"]
+	path = qemu
+	url = https://github.com/OpenXiangShan/qemu
+	branch = 9.0.0_matrix-v0.6
