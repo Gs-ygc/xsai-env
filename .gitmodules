@@ -1,7 +1,7 @@
 [submodule "XSAI"]
 	path = XSAI
 	url = https://github.com/OpenXiangShan/XSAI
-	branch = feat-integrate-cute
+	branch = master
 [submodule "nexus-am"]
 	path = nexus-am
 	url = https://github.com/Gs-ygc/nexus-am.git
