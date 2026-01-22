@@ -1,4 +1,4 @@
-.PHONY: help deps init llvm update test clean nemu xsai test-matrix
+.PHONY: help deps init llvm update test clean nemu xsai test-matrix qemu
 
 XS_PROJECT_ROOT := $(shell pwd)
 NEMU_HOME := $(XS_PROJECT_ROOT)/NEMU
@@ -27,7 +27,8 @@ init:
 
 llvm:
 	./scripts/build-llvm.sh
-
+qemu:
+	cd qemu && mkdir -p build && cd build && ../configure --target-list=riscv64-softmmu,riscv64-linux-user --enable-debug --enable-zstd && make -j && cd ../..
 nemu:
 	$(MAKE) -C $(NEMU_HOME) riscv64-matrix-xs_defconfig
 	$(MAKE) -C $(NEMU_HOME) -j
