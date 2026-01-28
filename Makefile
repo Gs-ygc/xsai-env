@@ -1,4 +1,4 @@
-.PHONY: help deps init llvm update test clean nemu xsai test-matrix qemu run-qemu
+.PHONY: help deps init llvm update test clean nemu xsai test-matrix qemu run-qemu firmware
 
 XS_PROJECT_ROOT := $(shell pwd)
 NEMU_HOME := $(XS_PROJECT_ROOT)/NEMU
@@ -7,7 +7,6 @@ NOOP_HOME := $(XS_PROJECT_ROOT)/XSAI
 LLVM_HOME := $(XS_PROJECT_ROOT)/local/llvm
 QEMU_HOME := $(XS_PROJECT_ROOT)/qemu
 PAYLOAD := $(XS_PROJECT_ROOT)/firmware/LibCheckpoint/build/gcpt.bin
-# PAYLOAD = gcpt.bin
 SIMPOINT_RESULT_ROOT := $(XS_PROJECT_ROOT)/firmware/simpoints
 CHECKPOINT_RESULT_ROOT := $(XS_PROJECT_ROOT)/firmware/checkpoints
 CHECKPOINT_CONFIG := build
@@ -52,7 +51,8 @@ update:
 
 test:
 	./scripts/env-test.sh
-
+firmware:
+	$(MAKE) -C firmware all
 run-qemu:
 	@echo "Running QEMU simulation with GCPT payload..."
 	@mkdir -p $(CHECKPOINT_RESULT_ROOT)/$(CHECKPOINT_CONFIG)
