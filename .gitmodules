@@ -41,3 +41,6 @@
 	path = firmware/riscv-linux
 	url = https://github.com/OpenXiangShan/riscv-linux
 	branch = linux-6.10.7_xiangshan
+[submodule "firmware/LibCheckpoint"]
+	path = firmware/LibCheckpoint
+	url = https://github.com/OpenXiangShan/LibCheckpoint
