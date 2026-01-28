@@ -72,13 +72,16 @@ check-env:
 
 download-linux: $(LINUX_TARBALL)
 	@echo "Extracting Linux kernel..."
-	@if [ ! -d "$(RISCV_LINUX_HOME)" ]; then \
+	@if [ ! -d "linux-$(LINUX_VERSION)" ]; then \
 		tar xf $(LINUX_TARBALL); \
+		ln -s linux-$(LINUX_VERSION) $(RISCV_LINUX_HOME); \
 		echo "✓ Linux kernel extracted"; \
 	else \
 		echo "✓ Linux kernel already extracted"; \
 	fi
-
+init: download-linux
+	git submodule update --init LibCheckpoint nemu_board opensbi riscv-rootfs
+	git submodule update --init --recursive opensbi
 $(LINUX_TARBALL):
 	@echo "Downloading Linux kernel $(LINUX_VERSION)..."
 	@wget -q --show-progress $(LINUX_URL)
