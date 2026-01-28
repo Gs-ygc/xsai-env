@@ -27,3 +27,17 @@
 	path = qemu
 	url = https://github.com/OpenXiangShan/qemu
 	branch = 9.0.0_matrix-v0.6
+[submodule "firmware/opensbi"]
+	path = firmware/opensbi
+	url = https://github.com/riscv-software-src/opensbi.git
+[submodule "firmware/riscv-rootfs"]
+	path = firmware/riscv-rootfs
+	url = https://github.com/OpenXiangShan/riscv-rootfs
+	branch = checkpoint
+[submodule "firmware/nemu_board"]
+	path = firmware/nemu_board
+	url = https://github.com/OpenXiangShan/nemu_board.git
+[submodule "firmware/riscv-linux"]
+	path = firmware/riscv-linux
+	url = https://github.com/OpenXiangShan/riscv-linux
+	branch = linux-6.10.7_xiangshan
