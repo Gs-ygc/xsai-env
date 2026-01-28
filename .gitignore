@@ -5,4 +5,5 @@ software/
 local/
 *.cache/*
 *.metals
+*.*
 compile_commands.json
