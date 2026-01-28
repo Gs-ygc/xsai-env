@@ -6,7 +6,7 @@ AM_HOME := $(XS_PROJECT_ROOT)/nexus-am
 NOOP_HOME := $(XS_PROJECT_ROOT)/XSAI
 LLVM_HOME := $(XS_PROJECT_ROOT)/local/llvm
 QEMU_HOME := $(XS_PROJECT_ROOT)/qemu
-PAYLOAD := $(XS_PROJECT_ROOT)/firmware/LibCheckpoint/build/gcpt.bin
+PAYLOAD := $(XS_PROJECT_ROOT)/NEMU/resource/gcpt_restore/build/gcpt.bin
 SIMPOINT_RESULT_ROOT := $(XS_PROJECT_ROOT)/firmware/simpoints
 CHECKPOINT_RESULT_ROOT := $(XS_PROJECT_ROOT)/firmware/checkpoints
 CHECKPOINT_CONFIG := build
@@ -60,12 +60,13 @@ run-qemu:
 		-bios $(PAYLOAD) \
 		-nographic -m 16G -smp 1 \
 		-serial mon:stdio \
-		-cpu rv64,v=true,vlen=128,h=true,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false \
+		-cpu rv64,v=true,vlen=128,h=true,sstc=false,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false \
 		-M nemu
 ## ,workload=$(WORKLOAD_NAME),cpt-interval=10000,output-base-dir=$(CHECKPOINT_RESULT_ROOT),config-name=$(CHECKPOINT_CONFIG),checkpoint-mode=SimpointCheckpoint,simpoint-path=$(SIMPOINT_RESULT_ROOT)
 	@echo "✓ QEMU simulation completed"
 # 		-device virtio-blk-device,drive=drv0 \
 # 		-drive file=llama.img,if=none,id=drv0,format=raw 
+
 clean:
 	rm -rf build
 	rm -rf local/llvm

@@ -6,4 +6,5 @@ local/
 *.cache/*
 *.metals
 *.*
+firmware/*linux*
 compile_commands.json

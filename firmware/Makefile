@@ -29,7 +29,12 @@ GCPT_BIN := $(GCPT_HOME)/build/gcpt.bin
 
 .PHONY: all check-env download-linux setup-submodules build-rootfs build-linux build-dtb build-opensbi build-gcpt clean help
 
-all: setup-submodules build-rootfs build-linux build-dtb build-opensbi build-gcpt
+all:
+	@$(MAKE) build-rootfs 
+	@$(MAKE) build-linux
+	@$(MAKE) build-dtb
+	@$(MAKE) build-opensbi
+	@$(MAKE) build-gcpt
 	@echo "✓ Build complete!"
 	@echo "  Linux Image: $(LINUX_IMAGE)"
 	@echo "  DTB: $(DTB_FILE)"
@@ -99,11 +104,13 @@ build-rootfs: setup-submodules
 		$(MAKE) apps/hello -j
 	@echo "✓ Root filesystem built"
 
-build-linux: build-rootfs
+build-linux:
 	@echo "Configuring Linux kernel..."
 	@cd $(RISCV_LINUX_HOME) && \
-		cp $(WORKLOAD_BUILD_ENV_HOME)/configs/xiangshan_defconfig arch/riscv/configs/xiangshan_defconfig && \
-		$(MAKE) xiangshan_defconfig && \
+		if [ ! -f ".config" ]; then \
+			cp $(WORKLOAD_BUILD_ENV_HOME)/configs/xiangshan_defconfig arch/riscv/configs/xiangshan_defconfig && \
+			$(MAKE) xiangshan_defconfig; \
+		fi && \
 		./scripts/config --enable CONFIG_BLOCK && \
 		./scripts/config --enable CONFIG_BLK_DEV && \
 		./scripts/config --enable CONFIG_VIRTIO_MENU && \
@@ -122,13 +129,21 @@ build-linux: build-rootfs
 build-dtb: setup-submodules
 	@echo "Building device tree blob..."
 	@cd $(WORKLOAD_BUILD_ENV_HOME)/dts && \
-		bash build_single_core_for_nemu.sh
+		mkdir -p build && \
+		python3 DTSGen.py \
+			--nr-harts 1 \
+			--nemu-sdhci-addr 0x40002000 \
+			--rva-profile rva23u64 \
+			--bootargs "console=hvc0 earlycon=sbi" \
+			--mmu-type riscv,sv39 | \
+		dtc -O dtb -o build/xiangshan.dtb -
 	@echo "✓ DTB built: $(DTB_FILE)"
 
 # build-opensbi: build-linux build-dtb
-build-opensbi:build-dtb
+build-opensbi:
 	@echo "Building OpenSBI firmware..."
 	@cd $(OPENSBI) && \
+		rm -rf build && \
 		$(MAKE) PLATFORM=generic \
 			FW_PAYLOAD_PATH=$(LINUX_IMAGE) \
 			FW_FDT_PATH=$(DTB_FILE) \
@@ -136,7 +151,9 @@ build-opensbi:build-dtb
 			-j$(shell nproc)
 	@echo "✓ OpenSBI payload built: $(OPENSBI_PAYLOAD)"
 
-build-gcpt: build-opensbi
+build-gcpt:
+	cd $(NEMU_HOME)/resource/gcpt_restore &&make clean && make GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin
+build-gcpt-t1:
 	@echo "Building GCPT checkpoint tool..."
 	@cd $(GCPT_HOME) && \
 		python3 -m venv .gcpt_venv && \
