@@ -1,4 +1,6 @@
-.PHONY: help deps init llvm update test clean nemu xsai test-matrix qemu run-qemu firmware
+.PHONY: help deps init init-force llvm update test clean nemu xsai test-matrix qemu run-qemu firmware
+
+GIT_FORCE_INIT ?= 0
 
 XS_PROJECT_ROOT := $(shell pwd)
 NEMU_HOME := $(XS_PROJECT_ROOT)/NEMU
@@ -17,6 +19,7 @@ help:
 	@echo "Usage:"
 	@echo "  make deps        - Install system dependencies (requires sudo)"
 	@echo "  make init        - Initialize submodules and environment"
+	@echo "  make init-force  - Force initialize submodules to avoid empty folders"
 	@echo "  make llvm        - Build custom LLVM toolchain"
 	@echo "  make nemu        - Build NEMU simulator"
 	@echo "  make xsai        - Build XSAI RTL simulation (Verilator)"
@@ -30,7 +33,10 @@ deps:
 	./scripts/setup-tools.sh
 
 init:
-	./scripts/setup.sh
+	GIT_FORCE_INIT=$(GIT_FORCE_INIT) ./scripts/setup.sh
+
+init-force:
+	$(MAKE) init GIT_FORCE_INIT=1
 
 llvm:
 	./scripts/build-llvm.sh
@@ -53,6 +59,10 @@ test:
 	./scripts/env-test.sh
 firmware:
 	$(MAKE) -C firmware all
+
+run-firmware:
+	$(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(NEMU_HOME)/resource/gcpt_restore/build/gcpt.bin
+
 run-qemu:
 	@echo "Running QEMU simulation with GCPT payload..."
 	@mkdir -p $(CHECKPOINT_RESULT_ROOT)/$(CHECKPOINT_CONFIG)

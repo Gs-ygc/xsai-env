@@ -1,22 +1,30 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # This script will setup XiangShan develop environment automatically
 
 # Init submodules
 # Setup XiangShan environment variables
 
+GIT_FORCE_INIT="${GIT_FORCE_INIT:-0}"
+FORCE_ARGS=()
+if [[ "$GIT_FORCE_INIT" == "1" ]]; then
+    FORCE_ARGS=(--force)
+fi
+
 dev(){
-    git submodule update --init DRAMsim3 NEMU NutShell nexus-am riscv-matrix-spec qemu
-    git submodule update --init --depth 1 llvm-project-ame
+    git submodule update --init "${FORCE_ARGS[@]}" DRAMsim3 NEMU NutShell nexus-am riscv-matrix-spec qemu
+    git submodule update --init "${FORCE_ARGS[@]}" --depth 1 llvm-project-ame
     cd nexus-am && git lfs pull; cd -;
-    git submodule update --init XSAI && make -C XSAI init;
-    cd firmware && make init; cd -;
+    git submodule update --init "${FORCE_ARGS[@]}" XSAI && make -C XSAI init GIT_FORCE_INIT="$GIT_FORCE_INIT";
+    cd firmware && make init GIT_FORCE_INIT="$GIT_FORCE_INIT"; cd -;
 }
 user(){
-    git submodule update --init qemu
-    cd firmware && make init; cd -;
+    git submodule update --init "${FORCE_ARGS[@]}" qemu
+    cd firmware && make init GIT_FORCE_INIT="$GIT_FORCE_INIT"; cd -;
 }
-user
+dev
 source $(dirname "$0")/../env.sh
 # OPTIONAL: export them to .bashrc
 echo XS_PROJECT_ROOT: ${XS_PROJECT_ROOT}

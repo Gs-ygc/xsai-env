@@ -2,6 +2,8 @@
 # Requirements: RISCV environment variable must point to toolchain root
 
 SHELL := /bin/bash
+GIT_FORCE_INIT ?= 0
+GIT_FORCE_FLAG := $(if $(filter 1 true TRUE yes YES,$(GIT_FORCE_INIT)),--force,)
 
 # Environment setup
 export RISCV := /opt/riscv/
@@ -16,6 +18,17 @@ export OPENSBI := $(WORK_DIR)/opensbi
 export WORKLOAD_BUILD_ENV_HOME := $(WORK_DIR)/nemu_board
 export GCPT_HOME := $(WORK_DIR)/LibCheckpoint
 export PATH := $(RISCV)/bin:$(PATH)
+DIRECT_MAP_MEM_START ?=
+DIRECT_MAP_MEM_SIZE ?=
+DTS_DIRECT_MAP_ARGS := $(if $(and $(DIRECT_MAP_MEM_START),$(DIRECT_MAP_MEM_SIZE)),--direct-map-mem $(DIRECT_MAP_MEM_START) $(DIRECT_MAP_MEM_SIZE),)
+XSAI_MEMORY_SIZE ?= 17179869184
+XSAI_DIRECT_MAP_MEM_START ?= 0x100000000
+XSAI_DIRECT_MAP_MEM_SIZE ?= 0x180000000
+XSAI_COMPATIBLE ?= xiangshan,ai-nemu-board xiangshan,nemu-board
+XSAI_MODEL ?= XiangShan AI
+XSAI_EXTRA_ISA_EXTENSIONS ?= zame zammai8i32
+XSAI_DTB_FILE := $(WORKLOAD_BUILD_ENV_HOME)/dts/build/xiangshan_ai.dtb
+INITRAMFS_SOURCE ?= $(RISCV_ROOTFS_HOME)/rootfsimg/initramfs-disk-xsai.txt
 # Linux kernel version
 LINUX_VERSION := 6.10.7
 LINUX_TARBALL := linux-$(LINUX_VERSION).tar.xz
@@ -23,11 +36,12 @@ LINUX_URL := https://cdn.kernel.org/pub/linux/kernel/v6.x/$(LINUX_TARBALL)
 
 # Build targets
 LINUX_IMAGE := $(RISCV_LINUX_HOME)/arch/riscv/boot/Image
-DTB_FILE := $(WORKLOAD_BUILD_ENV_HOME)/dts/build/xiangshan.dtb
+STD_DTB_FILE := $(WORKLOAD_BUILD_ENV_HOME)/dts/build/xiangshan.dtb
+DTB_FILE ?= $(XSAI_DTB_FILE)
 OPENSBI_PAYLOAD := $(OPENSBI)/build/platform/generic/firmware/fw_payload.bin
 GCPT_BIN := $(GCPT_HOME)/build/gcpt.bin	
 
-.PHONY: all check-env download-linux setup-submodules build-rootfs build-linux build-dtb build-opensbi build-gcpt clean help
+.PHONY: all check-env download-linux setup-submodules init init-force build-rootfs build-linux build-dtb build-dtb-std build-dtb-xsai build-opensbi build-gcpt clean help
 
 all:
 	@$(MAKE) build-rootfs 
@@ -53,9 +67,14 @@ help:
 	@echo "  check-env        - Verify environment setup"
 	@echo "  download-linux   - Download Linux kernel"
 	@echo "  setup-submodules - Initialize git submodules"
+	@echo "  init-force       - Force initialize firmware submodules"
 	@echo "  build-rootfs     - Build root filesystem"
 	@echo "  build-linux      - Build Linux kernel"
-	@echo "  build-dtb        - Build device tree blob"
+	@echo "                     INITRAMFS_SOURCE=$(INITRAMFS_SOURCE)"
+	@echo "  build-dtb        - Build XSAI device tree blob (default)"
+	@echo "  build-dtb-std    - Build standard XiangShan device tree blob"
+	@echo "                     Optional: DIRECT_MAP_MEM_START=0x100000000 DIRECT_MAP_MEM_SIZE=0x180000000"
+	@echo "  build-dtb-xsai   - Build XSAI-specific device tree blob"
 	@echo "  build-opensbi    - Build OpenSBI firmware"
 	@echo "  build-gcpt       - Build GCPT checkpoint tool"
 	@echo "  clean            - Clean build artifacts"
@@ -85,8 +104,11 @@ download-linux: $(LINUX_TARBALL)
 		echo "✓ Linux kernel already extracted"; \
 	fi
 init: download-linux
-	git submodule update --init LibCheckpoint nemu_board opensbi riscv-rootfs
-	git submodule update --init --recursive opensbi
+	git submodule update --init $(GIT_FORCE_FLAG) LibCheckpoint nemu_board opensbi riscv-rootfs
+	git submodule update --init $(GIT_FORCE_FLAG) --recursive opensbi
+
+init-force:
+	$(MAKE) init GIT_FORCE_INIT=1
 $(LINUX_TARBALL):
 	@echo "Downloading Linux kernel $(LINUX_VERSION)..."
 	@wget -q --show-progress $(LINUX_URL)
@@ -101,7 +123,8 @@ build-rootfs: setup-submodules
 	@cd $(RISCV_ROOTFS_HOME) && \
 		$(MAKE) apps/busybox -j && \
 		$(MAKE) apps/before_workload -j && \
-		$(MAKE) apps/hello -j
+		$(MAKE) apps/hello -j && \
+		$(MAKE) apps/hello_xsai -j
 	@echo "✓ Root filesystem built"
 
 build-linux:
@@ -121,12 +144,12 @@ build-linux:
 		./scripts/config --enable CONFIG_DEVTMPFS && \
 		./scripts/config --enable CONFIG_EXT4_FS && \
 		./scripts/config --enable CONFIG_BINFMT_SCRIPT && \
-		./scripts/config --set-str CONFIG_INITRAMFS_SOURCE "$(RISCV_ROOTFS_HOME)/rootfsimg/initramfs-disk.txt"
+		./scripts/config --set-str CONFIG_INITRAMFS_SOURCE "$(INITRAMFS_SOURCE)"
 	@echo "Building Linux kernel..."
 	@cd $(RISCV_LINUX_HOME) && yes ""|$(MAKE) -j$(shell nproc)
 	@echo "✓ Linux kernel built: $(LINUX_IMAGE)"
 
-build-dtb: setup-submodules
+build-dtb-std: setup-submodules
 	@echo "Building device tree blob..."
 	@cd $(WORKLOAD_BUILD_ENV_HOME)/dts && \
 		mkdir -p build && \
@@ -134,10 +157,33 @@ build-dtb: setup-submodules
 			--nr-harts 1 \
 			--nemu-sdhci-addr 0x40002000 \
 			--rva-profile rva23u64 \
+			$(DTS_DIRECT_MAP_ARGS) \
 			--bootargs "console=hvc0 earlycon=sbi" \
 			--mmu-type riscv,sv39 | \
 		dtc -O dtb -o build/xiangshan.dtb -
-	@echo "✓ DTB built: $(DTB_FILE)"
+	@echo "✓ Standard DTB built: $(STD_DTB_FILE)"
+
+build-dtb: build-dtb-xsai
+	@echo "✓ Default DTB built for XSAI: $(XSAI_DTB_FILE)"
+
+build-dtb-xsai: setup-submodules
+	@echo "Building XSAI device tree blob..."
+	@cd $(WORKLOAD_BUILD_ENV_HOME)/dts && \
+		mkdir -p build && \
+		python3 DTSGen.py \
+			--compatible $(XSAI_COMPATIBLE) \
+			--model "$(XSAI_MODEL)" \
+			--cpu-compatible xiangshan,ai riscv \
+			--nr-harts 1 \
+			--nemu-sdhci-addr 0x40002000 \
+			--rva-profile rva23s64 \
+			--isa-extensions $(XSAI_EXTRA_ISA_EXTENSIONS) \
+			--direct-map-mem $(XSAI_DIRECT_MAP_MEM_START) $(XSAI_DIRECT_MAP_MEM_SIZE) \
+			--bootargs "console=hvc0 earlycon=sbi" \
+			--memory-size $(XSAI_MEMORY_SIZE) \
+			--mmu-type riscv,sv48 | \
+		dtc -O dtb -o build/xiangshan_ai.dtb -
+	@echo "✓ XSAI DTB built: $(XSAI_DTB_FILE)"
 
 # build-opensbi: build-linux build-dtb
 build-opensbi:

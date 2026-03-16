@@ -13,6 +13,7 @@ git clone https://github.com/Gs-ygc/xsai-env
 cd xsai-env
 sudo make deps   # Install dependencies (Ubuntu/Debian)
 make init        # Initialize submodules
+make init-force  # Force checkout submodules (recommended for CI/self-hosted runners)
 ```
 
 ### 2. Environment Variables
