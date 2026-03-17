@@ -20,6 +20,7 @@
 	path = llvm-project-ame
 	url = https://github.com/xyyy1420/llvm-project-ame.git
 	branch = triton-commit-hash
+	shallow = true
 [submodule "riscv-matrix-spec"]
 	path = riscv-matrix-spec
 	url = https://github.com/OpenXiangShan/riscv-matrix-spec
@@ -27,6 +28,7 @@
 	path = qemu
 	url = https://github.com/OpenXiangShan/qemu
 	branch = 9.0.0_matrix-v0.6
+	shallow = true
 [submodule "firmware/opensbi"]
 	path = firmware/opensbi
 	url = https://github.com/riscv-software-src/opensbi.git

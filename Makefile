@@ -1,4 +1,4 @@
-.PHONY: help deps init init-force llvm update test clean nemu xsai test-matrix qemu run-qemu firmware
+.PHONY: help deps init init-force llvm update test clean nemu xsai test-matrix qemu run-qemu firmware versions
 
 GIT_FORCE_INIT ?= 0
 
@@ -25,6 +25,7 @@ help:
 	@echo "  make xsai        - Build XSAI RTL simulation (Verilator)"
 	@echo "  make test-matrix - Run matrix simple test"
 	@echo "  make update      - Update submodules to latest"
+	@echo "  make versions    - Regenerate VERSIONS file from current submodule state"
 	@echo "  make test        - Test the environment"
 	@echo "  make run-qemu    - Run QEMU simulation with GCPT payload"
 	@echo "  make clean       - Clean build artifacts"
@@ -59,6 +60,9 @@ test-matrix:
 
 update:
 	./scripts/update-submodule.sh
+
+versions:
+	./scripts/update-versions.sh
 
 test:
 	./scripts/env-test.sh
