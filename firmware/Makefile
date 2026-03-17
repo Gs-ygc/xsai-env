@@ -103,6 +103,14 @@ download-linux: $(LINUX_TARBALL)
 	else \
 		echo "✓ Linux kernel already extracted"; \
 	fi
+	@echo "Applying Matrix kernel patch (if needed)..."
+	@cd $(WORK_DIR) && \
+		if [ -f "$(RISCV_LINUX_HOME)/arch/riscv/kernel/matrix.c" ]; then \
+			echo "✓ Matrix patch already present"; \
+		else \
+			bash firmware/patches/apply-matrix-patch.sh "$(RISCV_LINUX_HOME)"; \
+			echo "✓ Matrix patch applied"; \
+		fi
 init: download-linux
 	git submodule update --init $(GIT_FORCE_FLAG) LibCheckpoint nemu_board opensbi riscv-rootfs
 	git submodule update --init $(GIT_FORCE_FLAG) --recursive opensbi
@@ -144,6 +152,10 @@ build-linux:
 		./scripts/config --enable CONFIG_DEVTMPFS && \
 		./scripts/config --enable CONFIG_EXT4_FS && \
 		./scripts/config --enable CONFIG_BINFMT_SCRIPT && \
+		./scripts/config --enable CONFIG_RISCV_ISA_V && \
+		./scripts/config --enable CONFIG_RISCV_ISA_V_DEFAULT_ENABLE && \
+		./scripts/config --set-val CONFIG_RISCV_ISA_V_UCOPY_THRESHOLD 768 && \
+		./scripts/config --enable CONFIG_RISCV_ISA_V_PREEMPTIVE && \
 		./scripts/config --set-str CONFIG_INITRAMFS_SOURCE "$(INITRAMFS_SOURCE)"
 	@echo "Building Linux kernel..."
 	@cd $(RISCV_LINUX_HOME) && yes ""|$(MAKE) -j$(shell nproc)

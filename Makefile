@@ -60,8 +60,8 @@ test:
 firmware:
 	$(MAKE) -C firmware all
 
-run-firmware:
-	$(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(NEMU_HOME)/resource/gcpt_restore/build/gcpt.bin
+run-nemu:
+	$(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(PAYLOAD)
 
 run-qemu:
 	@echo "Running QEMU simulation with GCPT payload..."
@@ -70,7 +70,7 @@ run-qemu:
 		-bios $(PAYLOAD) \
 		-nographic -m 16G -smp 1 \
 		-serial mon:stdio \
-		-cpu rv64,v=true,vlen=128,h=true,sstc=false,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false \
+		-cpu rv64,v=true,vlen=128,h=false,sstc=false,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false \
 		-M nemu
 ## ,workload=$(WORKLOAD_NAME),cpt-interval=10000,output-base-dir=$(CHECKPOINT_RESULT_ROOT),config-name=$(CHECKPOINT_CONFIG),checkpoint-mode=SimpointCheckpoint,simpoint-path=$(SIMPOINT_RESULT_ROOT)
 	@echo "✓ QEMU simulation completed"

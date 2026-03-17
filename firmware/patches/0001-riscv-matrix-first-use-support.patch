@@ -1,0 +1,165 @@
+--- a/arch/riscv/include/asm/csr.h
++++ b/arch/riscv/include/asm/csr.h
+@@ -30,6 +30,12 @@
+ #define SR_VS_CLEAN	_AC(0x00000400, UL)
+ #define SR_VS_DIRTY	_AC(0x00000600, UL)
+ 
++#define SR_MS		_AC(0x06000000, UL) /* Matrix Status */
++#define SR_MS_OFF	_AC(0x00000000, UL)
++#define SR_MS_INITIAL	_AC(0x02000000, UL)
++#define SR_MS_CLEAN	_AC(0x04000000, UL)
++#define SR_MS_DIRTY	_AC(0x06000000, UL)
++
+ #define SR_XS		_AC(0x00018000, UL) /* Extension Status */
+ #define SR_XS_OFF	_AC(0x00000000, UL)
+ #define SR_XS_INITIAL	_AC(0x00008000, UL)
+--- a/arch/riscv/include/asm/matrix.h
++++ b/arch/riscv/include/asm/matrix.h
+@@ -0,0 +1,25 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++#ifndef __ASM_RISCV_MATRIX_H
++#define __ASM_RISCV_MATRIX_H
++
++#include <asm/ptrace.h>
++#include <asm/csr.h>
++
++bool riscv_m_first_use_handler(struct pt_regs *regs);
++
++static inline void riscv_m_vstate_off(struct pt_regs *regs)
++{
++	regs->status = (regs->status & ~SR_MS) | SR_MS_OFF;
++}
++
++static inline void riscv_m_vstate_on(struct pt_regs *regs)
++{
++	regs->status = (regs->status & ~SR_MS) | SR_MS_INITIAL;
++}
++
++static inline bool riscv_m_vstate_query(struct pt_regs *regs)
++{
++	return (regs->status & SR_MS) != 0;
++}
++
++#endif
+--- a/arch/riscv/kernel/Makefile
++++ b/arch/riscv/kernel/Makefile
+@@ -68,6 +68,7 @@
+ 
+ obj-$(CONFIG_FPU)		+= fpu.o
+ obj-$(CONFIG_FPU)		+= kernel_mode_fpu.o
++obj-y			+= matrix.o
+ obj-$(CONFIG_RISCV_ISA_V)	+= vector.o
+ obj-$(CONFIG_RISCV_ISA_V)	+= kernel_mode_vector.o
+ obj-$(CONFIG_SMP)		+= smpboot.o
+--- a/arch/riscv/kernel/matrix.c
++++ b/arch/riscv/kernel/matrix.c
+@@ -0,0 +1,62 @@
++// SPDX-License-Identifier: GPL-2.0-only
++#include <linux/uaccess.h>
++#include <asm/matrix.h>
++#include <asm/insn.h>
++
++#define RVG_OPCODE_CUSTOM0	0x0b
++#define RVG_OPCODE_CUSTOM1	0x2b
++#define RVG_OPCODE_CUSTOM2	0x5b
++#define RVG_OPCODE_CUSTOM3	0x7b
++
++#define CSR_XMCSR_FIRST		0x802
++#define CSR_XMCSR_LAST		0x80a
++#define CSR_XMINFO_FIRST	0xcc0
++#define CSR_XMINFO_LAST		0xcc7
++
++static bool insn_is_matrix(u32 insn_buf)
++{
++	u32 opcode = insn_buf & __INSN_OPCODE_MASK;
++	u32 csr;
++
++	/* Matrix instructions and CSR ops are expected to be 4-byte. */
++	if (unlikely(GET_INSN_LENGTH(insn_buf) != 4))
++		return false;
++
++	switch (opcode) {
++	case RVG_OPCODE_CUSTOM0:
++	case RVG_OPCODE_CUSTOM1:
++	case RVG_OPCODE_CUSTOM2:
++	case RVG_OPCODE_CUSTOM3:
++		return true;
++	case RVG_OPCODE_SYSTEM:
++		csr = RVG_EXTRACT_SYSTEM_CSR(insn_buf);
++		if ((csr >= CSR_XMCSR_FIRST && csr <= CSR_XMCSR_LAST) ||
++		    (csr >= CSR_XMINFO_FIRST && csr <= CSR_XMINFO_LAST))
++			return true;
++		break;
++	}
++
++	return false;
++}
++
++bool riscv_m_first_use_handler(struct pt_regs *regs)
++{
++	u32 __user *epc = (u32 __user *)regs->epc;
++	u32 insn = (u32)regs->badaddr;
++
++	/* If MS has been enabled then this is not a first-use trap. */
++	if (riscv_m_vstate_query(regs))
++		return false;
++
++	if (!insn) {
++		if (__get_user(insn, epc))
++			return false;
++	}
++
++	if (!insn_is_matrix(insn))
++		return false;
++
++	/* Minimal support: allow retry with MS set to initial state. */
++	riscv_m_vstate_on(regs);
++	return true;
++}
+--- a/arch/riscv/kernel/process.c
++++ b/arch/riscv/kernel/process.c
+@@ -24,6 +24,7 @@
+ #include <asm/switch_to.h>
+ #include <asm/thread_info.h>
+ #include <asm/cpuidle.h>
++#include <asm/matrix.h>
+ #include <asm/vector.h>
+ #include <asm/cpufeature.h>
+ 
+@@ -171,6 +172,8 @@
+ 	memset(&current->thread.vstate, 0, sizeof(struct __riscv_v_ext_state));
+ 	clear_tsk_thread_flag(current, TIF_RISCV_V_DEFER_RESTORE);
+ #endif
++	/* Reset matrix state for userspace first-use flow. */
++	riscv_m_vstate_off(task_pt_regs(current));
+ }
+ 
+ void arch_release_task_struct(struct task_struct *tsk)
+@@ -214,6 +217,8 @@
+ 		*childregs = *(current_pt_regs());
+ 		/* Turn off status.VS */
+ 		riscv_v_vstate_off(childregs);
++		/* Turn off status.MS */
++		riscv_m_vstate_off(childregs);
+ 		if (usp) /* User fork */
+ 			childregs->sp = usp;
+ 		if (clone_flags & CLONE_SETTLS)
+--- a/arch/riscv/kernel/traps.c
++++ b/arch/riscv/kernel/traps.c
+@@ -30,6 +30,7 @@
+ #include <asm/ptrace.h>
+ #include <asm/syscall.h>
+ #include <asm/thread_info.h>
++#include <asm/matrix.h>
+ #include <asm/vector.h>
+ #include <asm/irq_stack.h>
+ 
+@@ -177,6 +178,8 @@
+ 		local_irq_enable();
+ 
+ 		handled = riscv_v_first_use_handler(regs);
++		if (!handled)
++			handled = riscv_m_first_use_handler(regs);
+ 
+ 		local_irq_disable();
+ 

@@ -16,8 +16,8 @@ fi
 dev(){
     git submodule update --init "${FORCE_ARGS[@]}" DRAMsim3 NEMU NutShell nexus-am riscv-matrix-spec qemu
     git submodule update --init "${FORCE_ARGS[@]}" --depth 1 llvm-project-ame
-    cd nexus-am && git lfs pull; cd -;
-    git submodule update --init "${FORCE_ARGS[@]}" XSAI && make -C XSAI init GIT_FORCE_INIT="$GIT_FORCE_INIT";
+    # cd nexus-am && git lfs pull; cd -; # LFS files are too large, we don't use them in the init flow
+    git submodule update --init "${FORCE_ARGS[@]}" XSAI && make -C XSAI init-force;
     cd firmware && make init GIT_FORCE_INIT="$GIT_FORCE_INIT"; cd -;
 }
 user(){
