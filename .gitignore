@@ -7,3 +7,8 @@ local/
 *.metals
 firmware/*linux*
 compile_commands.json
+**/build
+**/build-*
+**/Build*
+log/
+firmware/checkpoints
