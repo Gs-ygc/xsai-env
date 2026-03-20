@@ -12,7 +12,8 @@ export ARCH := riscv
 export CROSS_COMPILE := riscv64-unknown-linux-gnu-
 
 # Directory setup
-export WORK_DIR := $(CURDIR)
+export WORK_DIR := $(XS_PROJECT_ROOT)/firmware
+
 export RISCV_LINUX_HOME := $(WORK_DIR)/riscv-linux
 export RISCV_ROOTFS_HOME := $(WORK_DIR)/riscv-rootfs
 export OPENSBI := $(WORK_DIR)/opensbi
@@ -97,19 +98,24 @@ check-env:
 
 download-linux: $(LINUX_TARBALL)
 	@echo "Extracting Linux kernel..."
+	@if [ -d "$(RISCV_LINUX_HOME)" ]; then \
+		echo "Removing existing $(RISCV_LINUX_HOME)..."; \
+		rm -rf "$(RISCV_LINUX_HOME)"; \
+	fi
 	@if [ ! -d "linux-$(LINUX_VERSION)" ]; then \
 		tar xf $(LINUX_TARBALL); \
 		ln -s linux-$(LINUX_VERSION) $(RISCV_LINUX_HOME); \
 		echo "✓ Linux kernel extracted"; \
 	else \
-		echo "✓ Linux kernel already extracted"; \
+		ln -s linux-$(LINUX_VERSION) $(RISCV_LINUX_HOME); \
+		echo "✓ Linux kernel symlink updated"; \
 	fi
 	@echo "Applying Matrix kernel patch (if needed)..."
 	@cd $(WORK_DIR) && \
 		if [ -f "$(RISCV_LINUX_HOME)/arch/riscv/kernel/matrix.c" ]; then \
 			echo "✓ Matrix patch already present"; \
 		else \
-			bash firmware/patches/apply-matrix-patch.sh "$(RISCV_LINUX_HOME)"; \
+			bash $(WORK_DIR)/patches/apply-matrix-patch.sh "$(RISCV_LINUX_HOME)"; \
 			echo "✓ Matrix patch applied"; \
 		fi
 init: download-linux
