@@ -1,0 +1,9 @@
+{
+    "clangd.path": "${workspaceFolder}/local/llvm/bin/clangd",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/local"
+    ],
+    "clangd.fallbackFlags": [
+        "--target=riscv64-unknown-linux-gnu"
+    ]
+}

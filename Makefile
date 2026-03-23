@@ -1,4 +1,4 @@
-.PHONY: help deps init init-force llvm update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform _ensure_qemu _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
+.PHONY: help deps init init-force llvm update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform ccdb ccdb-append _ensure_qemu _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
 
 GIT_FORCE_INIT ?= 1
 
@@ -37,6 +37,9 @@ MEMORY        ?= 4G
 SMP           ?= 1
 # Pass extra args straight to checkpoint.sh, e.g. CKPT_ARGS="--config my-run"
 CKPT_ARGS     ?=
+CCDB          ?= $(XS_PROJECT_ROOT)/local/compile_commands.json
+CCDB_MAKE     ?= firmware
+CCDB_SCRIPT   := ./scripts/update-compile-commands.sh
 
 help:
 	@echo "XSAI Environment Manager"
@@ -54,6 +57,8 @@ help:
 	@echo "  make versions    - Regenerate VERSIONS file from current submodule state"
 	@echo "  make test        - Test the environment"
 	@echo "  make run-qemu    - Run QEMU simulation with GCPT payload"
+	@echo "  make ccdb        - Rebuild unified compile_commands.json via bear"
+	@echo "  make ccdb-append - Append a build to compile_commands.json and deduplicate"
 	@echo "  make run-emu-debug PAYLOAD=<p> DIFF=1 WAVE_BEGIN=50000 WAVE_END=180000"
 	@echo "                   - RTL debug: FST wave + ChiselDB (set FORK=1 to skip wave)"
 	@echo "  make clean       - Clean build artifacts (NEMU, AM, firmware, build/)"
@@ -114,6 +119,12 @@ test:
 	./scripts/env-test.sh
 firmware:
 	$(MAKE) -C firmware all
+
+ccdb:
+	$(CCDB_SCRIPT) --db "$(CCDB)" -- make $(CCDB_MAKE)
+
+ccdb-append:
+	$(CCDB_SCRIPT) --append --db "$(CCDB)" -- make $(CCDB_MAKE)
 
 DIFF      ?= 0
 LOG       ?= 0
@@ -260,3 +271,4 @@ distclean:
 	$(MAKE) -C firmware distclean
 	@rm -rf local/llvm
 	@[ -d qemu/build ] && $(MAKE) -C qemu/build distclean || true
+

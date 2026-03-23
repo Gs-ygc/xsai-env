@@ -5,9 +5,11 @@
 [submodule "nexus-am"]
 	path = nexus-am
 	url = https://github.com/Gs-ygc/nexus-am.git
+	branch = master
 [submodule "DRAMsim3"]
 	path = DRAMsim3
 	url = https://github.com/OpenXiangShan/DRAMsim3.git
+	branch = master
 [submodule "NEMU"]
 	path = NEMU
 	url = https://github.com/yu-yake2002/NEMU-Matrix.git
@@ -34,6 +36,8 @@
 [submodule "firmware/opensbi"]
 	path = firmware/opensbi
 	url = https://github.com/riscv-software-src/opensbi.git
+	branch = master
+	update = none
 [submodule "firmware/riscv-rootfs"]
 	path = firmware/riscv-rootfs
 	url = https://github.com/OurCompArchGroup/riscv-rootfs.git
@@ -41,9 +45,12 @@
 [submodule "firmware/nemu_board"]
 	path = firmware/nemu_board
 	url = https://github.com/OpenXiangShan/nemu_board.git
+	branch = master
 [submodule "firmware/LibCheckpoint"]
 	path = firmware/LibCheckpoint
 	url = https://github.com/OpenXiangShan/LibCheckpoint
+	branch = master
 [submodule "firmware/gcpt_restore"]
 	path = firmware/gcpt_restore
 	url = https://github.com/OpenXiangShan/LibCheckpointAlpha.git
+	branch = master
