@@ -1,5 +1,6 @@
 out/
 .direnv/
+.envrc.local
 .vscode/
 software/
 local/
@@ -13,3 +14,11 @@ compile_commands.json
 log/
 firmware/checkpoints
 .debug/
+.venv/
+*.log
+*.log.*
+*.dmp
+*.core
+*.core.*
+*.dmp.*
+*/NEMU/resource/*

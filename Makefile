@@ -1,15 +1,22 @@
-.PHONY: help deps init init-force llvm update test clean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt _ensure_qemu _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
+.PHONY: help deps init init-force llvm update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform _ensure_qemu _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
 
-GIT_FORCE_INIT ?= 0
+GIT_FORCE_INIT ?= 1
 
-XS_PROJECT_ROOT := $(shell pwd)
-NEMU_HOME := $(XS_PROJECT_ROOT)/NEMU
-AM_HOME := $(XS_PROJECT_ROOT)/nexus-am
-NOOP_HOME := $(XS_PROJECT_ROOT)/XSAI
-LLVM_HOME := $(XS_PROJECT_ROOT)/local/llvm
-QEMU_HOME := $(XS_PROJECT_ROOT)/qemu
-GCPT_RESTORE_HOME := $(XS_PROJECT_ROOT)/firmware/gcpt_restore
+XS_PROJECT_ROOT ?= $(shell pwd)
+NEMU_HOME ?= $(XS_PROJECT_ROOT)/NEMU
+AM_HOME ?= $(XS_PROJECT_ROOT)/nexus-am
+NOOP_HOME ?= $(XS_PROJECT_ROOT)/XSAI
+LLVM_HOME ?= $(XS_PROJECT_ROOT)/local/llvm
+QEMU_HOME ?= $(XS_PROJECT_ROOT)/qemu
+GCPT_RESTORE_HOME ?= $(XS_PROJECT_ROOT)/firmware/gcpt_restore
+#LibCheckpoint (多核用)
+
 PAYLOAD := $(GCPT_RESTORE_HOME)/build/gcpt.bin
+
+# Canonical QEMU CPU flags — keep in sync with scripts/checkpoint.sh CPU_FLAGS
+QEMU_CPU_FLAGS ?= rv64,v=true,vlen=128,h=true,sstc=true,svpbmt=true,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false
+
+QEMU_CPU_FLAGS := rv64,v=true,vlen=128,h=false,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=false,sv57=false,sv64=false
 SIMPOINT_RESULT_ROOT := $(XS_PROJECT_ROOT)/firmware/simpoints
 CHECKPOINT_RESULT_ROOT := $(XS_PROJECT_ROOT)/firmware/checkpoints
 CHECKPOINT_CONFIG := build
@@ -23,10 +30,10 @@ DOCKER_USER ?= $(DOCKER_UID):$(DOCKER_GID)
 SIMPOINT_HOME := $(NEMU_HOME)/resource/simpoint/simpoint_repo
 SIMPOINT_BIN  := $(SIMPOINT_HOME)/bin/simpoint
 MODEL_IMG     ?=
-CPT_INTERVAL  ?= 10000000
-PROFILING_INTERVALS ?= 10000000
+CPT_INTERVAL  ?= 100000
+PROFILING_INTERVALS ?= $(CPT_INTERVAL)
 SIMPOINT_MAX_K      ?= 10
-MEMORY        ?= 16G
+MEMORY        ?= 4G
 SMP           ?= 1
 # Pass extra args straight to checkpoint.sh, e.g. CKPT_ARGS="--config my-run"
 CKPT_ARGS     ?=
@@ -47,7 +54,10 @@ help:
 	@echo "  make versions    - Regenerate VERSIONS file from current submodule state"
 	@echo "  make test        - Test the environment"
 	@echo "  make run-qemu    - Run QEMU simulation with GCPT payload"
-	@echo "  make clean       - Clean build artifacts"
+	@echo "  make run-emu-debug PAYLOAD=<p> DIFF=1 WAVE_BEGIN=50000 WAVE_END=180000"
+	@echo "                   - RTL debug: FST wave + ChiselDB (set FORK=1 to skip wave)"
+	@echo "  make clean       - Clean build artifacts (NEMU, AM, firmware, build/)"
+	@echo "  make distclean   - Deep clean including LLVM, qemu build, firmware submodules"
 	@echo ""
 	@echo "SimPoint Checkpoint targets (require MODEL_IMG=<path/to/disk.img>):"
 	@echo "  make simpoint    - Build the SimPoint clustering binary"
@@ -91,7 +101,8 @@ emu-gsim:
 	$(MAKE) -C $(NOOP_HOME) gsim -j CONFIG=DefaultMatrixConfig EMU_TRACE="fst" GSIM=1
 
 test-matrix:
-	$(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(AM_HOME)/apps/llama/llama-riscv64-xs.bin
+	$(MAKE) -C ${AM_HOME}/tests/ame0.6 TOOLCHAIN=LLVM
+	$(MAKE) -C ${AM_HOME}/tests/ame0.6 TOOLCHAIN=LLVM  run-emu
 
 update:
 	./scripts/update-submodule.sh
@@ -109,33 +120,65 @@ LOG       ?= 0
 EMU_SCRIPT := ./scripts/run-emu.sh
 EMU_FLAGS   = $(if $(filter 1,$(LOG)),--log,) $(if $(filter 1,$(DIFF)),--diff,)
 
-run-emu:
+run-emu: _ensure_emu
 	$(EMU_SCRIPT) $(EMU_FLAGS) $(PAYLOAD)
 
-run-nemu:
-	$(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(PAYLOAD)
+# RTL debug shortcut — captures both FST waveform and ChiselDB in one pass.
+# Usage: make run-emu-debug PAYLOAD=<path> DIFF=1 WAVE_BEGIN=50000 WAVE_END=180000
+#        make run-emu-debug PAYLOAD=<path> DIFF=1 FORK=1  # no wave, DB only (faster)
+WAVE_BEGIN  ?=
+WAVE_END    ?=
+WARMUP      ?=
+MAX_INSTR   ?=
+FORK        ?= 0
+DB_SELECT   ?= lifetime
+_WAVE_FLAGS  = $(if $(filter 0,$(FORK)),--wave $(if $(WAVE_BEGIN),-b $(WAVE_BEGIN)) $(if $(WAVE_END),-e $(WAVE_END)))
+_FORK_FLAG   = $(if $(filter 1,$(FORK)),--fork)
+_W_FLAG      = $(if $(WARMUP),-W $(WARMUP))
+_I_FLAG      = $(if $(MAX_INSTR),-I $(MAX_INSTR))
+
+run-emu-debug: _ensure_emu
+	$(EMU_SCRIPT) $(EMU_FLAGS) --log \
+	  $(if $(WARMUP),-W $(WARMUP)) \
+	  $(if $(MAX_INSTR),-I $(MAX_INSTR)) \
+	  $(_WAVE_FLAGS) $(_FORK_FLAG) \
+	  --db --db-select "$(DB_SELECT)" \
+	  $(PAYLOAD)
+
+RESTORER  ?= $(GCPT_RESTORE_HOME)/build/gcpt.bin
+
+run-nemu: _ensure_nemu
+	@case "$(PAYLOAD)" in \
+	  *.gz|*.zstd|*.zst) \
+	    $(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(PAYLOAD) -r $(RESTORER) ;; \
+	  *) \
+	    $(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(PAYLOAD) ;; \
+	esac
 
 # export QEMU_LD_PREFIX=sysroot_path
 # Setting QEMU_LD_PREFIX is necessary to avoid "Could not open '/lib/ld-linux-riscv64-lp64d.so.1': No such file or directory"
 # The sysroot_path should be set to your compiler's sysroot path, for example: QEMU_LD_PREFIX=/opt/riscv/sysroot
 run-user:
-	@$(QEMU_HOME)/build/qemu-riscv64 -cpu rv64,v=true,vlen=128,h=false,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32 firmware/riscv-rootfs/rootfsimg/build/hello_xsai
+	@$(QEMU_HOME)/build/qemu-riscv64 -cpu $(QEMU_CPU_FLAGS) firmware/riscv-rootfs/rootfsimg/build/hello_xsai
 
-run-qemu:
-	@echo "Running QEMU simulation with GCPT payload..."
-	@mkdir -p $(CHECKPOINT_RESULT_ROOT)/$(CHECKPOINT_CONFIG)
-	@$(QEMU_HOME)/build/qemu-system-riscv64 \
-		-bios $(PAYLOAD) \
-		-nographic -m 24G -smp 1 \
-		-serial mon:stdio \
-		-cpu rv64,v=true,vlen=128,h=true,sstc=true,svpbmt=true,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false \
-		-M nemu
-# 		,workload=$(WORKLOAD_NAME),cpt-interval=100000000,output-base-dir=$(CHECKPOINT_RESULT_ROOT),config-name=$(CHECKPOINT_CONFIG),checkpoint-mode=UniformCheckpoint
+run-qemu: _ensure_qemu
+	@echo "Running QEMU simulation..."
+	@case "$(PAYLOAD)" in \
+	  *.gz|*.zstd|*.zst) \
+	    $(QEMU_HOME)/build/qemu-system-riscv64 \
+	      -M nemu,checkpoint=$(PAYLOAD),gcpt-restore=$(RESTORER) \
+	      -nographic -m $(MEMORY) -smp $(SMP) \
+	      -serial mon:stdio \
+	      -cpu $(QEMU_CPU_FLAGS) ;; \
+	  *) \
+	    $(QEMU_HOME)/build/qemu-system-riscv64 \
+	      -bios $(PAYLOAD) \
+	      -nographic -m $(MEMORY) -smp $(SMP) \
+	      -serial mon:stdio \
+	      -cpu $(QEMU_CPU_FLAGS) \
+	      -M nemu ;; \
+	esac
 	@echo "✓ QEMU simulation completed"
-	@echo "Checkpoints saved to: $(CHECKPOINT_RESULT_ROOT)/$(CHECKPOINT_CONFIG)/$(WORKLOAD_NAME)/"
-# 	@ls $(CHECKPOINT_RESULT_ROOT)/$(CHECKPOINT_CONFIG)/$(WORKLOAD_NAME)/ 2>/dev/null || echo "(directory empty or not found)"
-# 		-device virtio-blk-device,drive=drv0 \
-# 		-drive file=llama.img,if=none,id=drv0,format=raw 
 
 # ---------------------------------------------------------------------------
 # SimPoint — init nested submodule (if needed) then build the binary
@@ -163,7 +206,7 @@ $(SIMPOINT_BIN):
 #   SIMPOINT_MAX_K MEMORY SMP MODEL_IMG CKPT_ARGS
 # ---------------------------------------------------------------------------
 PROFILING_PLUGIN := $(QEMU_HOME)/build/contrib/plugins/libprofiling.so
-CKPT_SCRIPT := ./scripts/checkpoint.sh
+CKPT_SCRIPT := CPU_FLAGS='$(QEMU_CPU_FLAGS)' ./scripts/checkpoint.sh
 # RESUME_CHECKPOINT: optional path to an existing checkpoint to warm-start profiling
 # Leave empty (default) for a cold-start profiling run.
 RESUME_CHECKPOINT ?=
@@ -181,8 +224,12 @@ CKPT_COMMON_FLAGS = \
 	$(if $(RESUME_CHECKPOINT),--resume $(RESUME_CHECKPOINT),) \
 	$(CKPT_ARGS)
 
-# Only build qemu/firmware when the output files are actually missing.
-# Using shell guards here avoids triggering PHONY targets on every invocation.
+_ensure_emu:
+	@test -f $(NOOP_HOME)/build/emu || $(MAKE) emu-verilator
+
+_ensure_nemu:
+	@test -f $(NEMU_HOME)/build/riscv64-nemu-interpreter || $(MAKE) nemu
+
 _ensure_qemu:
 	@test -f $(PROFILING_PLUGIN) || $(MAKE) qemu
 
@@ -205,5 +252,11 @@ uniform: _ensure_qemu _ensure_firmware
 
 
 clean:
-	rm -rf build
-	rm -rf local/llvm
+	$(MAKE) -C $(NEMU_HOME) clean
+	$(MAKE) -C firmware clean
+
+distclean:
+	$(MAKE) -C $(NEMU_HOME) distclean
+	$(MAKE) -C firmware distclean
+	@rm -rf local/llvm
+	@[ -d qemu/build ] && $(MAKE) -C qemu/build distclean || true

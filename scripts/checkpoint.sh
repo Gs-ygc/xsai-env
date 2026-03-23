@@ -44,7 +44,7 @@ RESUME_CHECKPOINT="${RESUME_CHECKPOINT:-}"  # optional: resume from an existing 
 # Derived paths
 QEMU_HOME="${QEMU_HOME:-$XS_PROJECT_ROOT/qemu}"
 NEMU_HOME="${NEMU_HOME:-$XS_PROJECT_ROOT/NEMU}"
-GCPT_RESTORE_HOME="${GCPT_RESTORE_HOME:-$XS_PROJECT_ROOT/firmware/gcpt_restore}"
+GCPT_RESTORE_HOME="${GCPT_RESTORE_HOME:-$XS_PROJECT_ROOT/firmware/LibCheckpoint}"
 PAYLOAD="${PAYLOAD:-$GCPT_RESTORE_HOME/build/gcpt.bin}"
 MODEL_IMG="${MODEL_IMG:-}"   # caller MUST set this or pass --img <path>
 
@@ -54,8 +54,10 @@ SIMPOINT_BIN="${SIMPOINT_BIN:-$NEMU_HOME/resource/simpoint/simpoint_repo/bin/sim
 QEMU_BIN="$QEMU_HOME/build/qemu-system-riscv64"
 PROFILING_PLUGIN="$QEMU_HOME/build/contrib/plugins/libprofiling.so"
 
-# QEMU CPU flags shared between profiling and checkpointing runs
-CPU_FLAGS="rv64,v=true,vlen=128,h=true,sstc=true,svpbmt=true,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false"
+# QEMU CPU flags shared between profiling and checkpointing runs.
+# Can be overridden by the caller: CPU_FLAGS=... ./scripts/checkpoint.sh
+# The Makefile passes QEMU_CPU_FLAGS via: $(MAKE) ... CPU_FLAGS='$(QEMU_CPU_FLAGS)'
+CPU_FLAGS="${CPU_FLAGS:-rv64,v=true,vlen=128,h=true,sstc=true,svpbmt=true,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false}"
 
 # ---------------------------------------------------------------------------
 # Helper utilities
@@ -198,6 +200,12 @@ do_checkpoint() {
 
     local cluster_dir="$CHECKPOINT_RESULT_ROOT/cluster-0-0"
 
+    local out_dir="$CHECKPOINT_RESULT_ROOT/$CHECKPOINT_CONFIG/$WORKLOAD_NAME"
+    if [[ -d "$out_dir" ]]; then
+        log "Removing existing checkpoint dir: $out_dir"
+        rm -rf "$out_dir"
+    fi
+
     log "=== Phase 3: Checkpointing ==="
     log "  Workload      : $WORKLOAD_NAME"
     log "  Config        : $CHECKPOINT_CONFIG"
@@ -225,8 +233,8 @@ do_checkpoint() {
         "${drive_args[@]}"
 
     log "✓ Checkpoint dump complete"
-    log "  Results: $CHECKPOINT_RESULT_ROOT/$CHECKPOINT_CONFIG/$WORKLOAD_NAME/"
-    ls "$CHECKPOINT_RESULT_ROOT/$CHECKPOINT_CONFIG/$WORKLOAD_NAME/" 2>/dev/null \
+    log "  Results: $out_dir"
+    ls "$out_dir" 2>/dev/null \
         || log "  (directory empty or not yet created)"
 }
 
@@ -236,6 +244,12 @@ do_checkpoint() {
 do_uniform() {
     check_prereqs
     [[ -z "$MODEL_IMG" ]] || [[ -f "$MODEL_IMG" ]] || die "Disk image not found: $MODEL_IMG"
+
+    local out_dir="$CHECKPOINT_RESULT_ROOT/$CHECKPOINT_CONFIG/$WORKLOAD_NAME"
+    if [[ -d "$out_dir" ]]; then
+        log "Removing existing checkpoint dir: $out_dir"
+        rm -rf "$out_dir"
+    fi
 
     log "=== Uniform Checkpointing ==="
     log "  Workload      : $WORKLOAD_NAME"
@@ -264,8 +278,8 @@ do_uniform() {
         "${drive_args[@]}"
 
     log "✓ Uniform checkpoint dump complete"
-    log "  Results: $CHECKPOINT_RESULT_ROOT/$CHECKPOINT_CONFIG/$WORKLOAD_NAME/"
-    ls "$CHECKPOINT_RESULT_ROOT/$CHECKPOINT_CONFIG/$WORKLOAD_NAME/" 2>/dev/null \
+    log "  Results: $out_dir"
+    ls "$out_dir" 2>/dev/null \
         || log "  (directory empty or not yet created)"
 }
 

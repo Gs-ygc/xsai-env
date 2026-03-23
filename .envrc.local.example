@@ -1,0 +1,18 @@
+# .envrc.local — machine-specific overrides, NOT tracked by git
+# Copy this file to .envrc.local and customize as needed.
+#
+# Examples:
+
+# Override toolchain path (if not in the default locations)
+# export RISCV=/custom/path/to/riscv-toolchain
+
+# Use a different LLVM build
+# export LLVM_HOME=/opt/llvm-custom
+
+# Extra PATH entries
+# PATH_add $HOME/.local/bin
+
+# Proxy settings
+# export https_proxy=http://proxy.example.com:7890
+# export http_proxy=http://proxy.example.com:7890
+# export no_proxy=localhost,127.0.0.1
