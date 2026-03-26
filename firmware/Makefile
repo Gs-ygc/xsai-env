@@ -12,7 +12,7 @@ export ARCH := riscv
 export CROSS_COMPILE := riscv64-unknown-linux-gnu-
 
 # Directory setup
-XS_PROJECT_ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
+XS_PROJECT_ROOT ?= $(abspath $(dir $(firstword $(MAKEFILE_LIST)))/..)
 export WORK_DIR := $(XS_PROJECT_ROOT)/firmware
 
 export RISCV_LINUX_HOME := $(WORK_DIR)/riscv-linux
@@ -46,6 +46,17 @@ STD_DTB_FILE := $(WORKLOAD_BUILD_ENV_HOME)/dts/build/xiangshan.dtb
 DTB_FILE ?= $(XSAI_DTB_FILE)
 OPENSBI_PAYLOAD := $(OPENSBI)/build/platform/generic/firmware/fw_payload.bin
 GCPT_BIN := $(GCPT_RESTORE_HOME)/build/gcpt.bin
+FIRMWARE_LOG_DIR ?= $(XS_PROJECT_ROOT)/log
+BUILD_LOG_TAIL_LINES ?= 50
+ROOTFS_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/rootfs-build.log
+LINUX_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/linux-build.log
+OPENSBI_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/opensbi-build.log
+GCPT_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/gcpt-build.log
+SHOW_FIRMWARE_BUILD_LOGS ?= 0
+SHOW_ROOTFS_BUILD_LOG ?= $(SHOW_FIRMWARE_BUILD_LOGS)
+SHOW_LINUX_BUILD_LOG ?= $(SHOW_FIRMWARE_BUILD_LOGS)
+SHOW_OPENSBI_BUILD_LOG ?= $(SHOW_FIRMWARE_BUILD_LOGS)
+SHOW_GCPT_BUILD_LOG ?= $(SHOW_FIRMWARE_BUILD_LOGS)
 
 .PHONY: all check-env download-linux setup-submodules init init-force build-rootfs build-linux build-dtb build-dtb-std build-dtb-xsai build-opensbi build-gcpt build-gcpt-clean clean distclean help
 
@@ -70,12 +81,15 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  all              - Build everything (default)"
+	@echo "                     SHOW_FIRMWARE_BUILD_LOGS=1 to stream all major build logs"
 	@echo "  check-env        - Verify environment setup"
 	@echo "  download-linux   - Download Linux kernel"
 	@echo "  setup-submodules - Initialize git submodules"
 	@echo "  init-force       - Force initialize firmware submodules"
 	@echo "  build-rootfs     - Build root filesystem"
+	@echo "                     SHOW_ROOTFS_BUILD_LOG=1 to stream full rootfs build logs"
 	@echo "  build-linux      - Build Linux kernel"
+	@echo "                     SHOW_LINUX_BUILD_LOG=1 to stream full kernel build logs"
 	@echo "                     INITRAMFS_SOURCE=$(INITRAMFS_SOURCE)"
 	@echo "                     INITRAMFS_COMMON_SOURCES=$(INITRAMFS_COMMON_SOURCES)"
 	@echo "  build-dtb        - Build XSAI device tree blob (default)"
@@ -83,7 +97,9 @@ help:
 	@echo "                     Optional: DIRECT_MAP_MEM_START=0x100000000 DIRECT_MAP_MEM_SIZE=0x180000000"
 	@echo "  build-dtb-xsai   - Build XSAI-specific device tree blob"
 	@echo "  build-opensbi    - Build OpenSBI firmware"
+	@echo "                     SHOW_OPENSBI_BUILD_LOG=1 to stream full OpenSBI build logs"
 	@echo "  build-gcpt       - Build GCPT checkpoint tool (incremental)"
+	@echo "                     SHOW_GCPT_BUILD_LOG=1 to stream full GCPT build logs"
 	@echo "  build-gcpt-clean - Force clean rebuild of GCPT (after editing csr.h etc.)"
 	@echo "  clean            - Clean build artifacts"
 	@echo "  distclean        - Deep clean: remove downloads and deinit submodules"
@@ -136,17 +152,26 @@ setup-submodules:
 
 build-rootfs: setup-submodules
 	@echo "Building root filesystem..."
-	@cd $(RISCV_ROOTFS_HOME) && \
-		$(MAKE) rootfsimg -j || exit $$?
+	@mkdir -p $(FIRMWARE_LOG_DIR)
+	@if [ "$(SHOW_ROOTFS_BUILD_LOG)" = "1" ]; then \
+		cd $(RISCV_ROOTFS_HOME) && $(MAKE) rootfsimg -j; \
+	else \
+		cd $(RISCV_ROOTFS_HOME) && $(MAKE) rootfsimg -j > "$(ROOTFS_BUILD_LOG)" 2>&1 || { \
+			status=$$?; \
+			echo "✗ Root filesystem build failed. Full log: $(ROOTFS_BUILD_LOG)"; \
+			echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(ROOTFS_BUILD_LOG) ---"; \
+			tail -n $(BUILD_LOG_TAIL_LINES) "$(ROOTFS_BUILD_LOG)"; \
+			exit $$status; \
+		}; \
+		echo "  Rootfs build log: $(ROOTFS_BUILD_LOG)"; \
+	fi
 	@echo "✓ Root filesystem built"
 
 build-linux:
 	@echo "Configuring Linux kernel..."
 	@cd $(RISCV_LINUX_HOME) && \
-		if [ ! -f ".config" ]; then \
-			cp $(WORKLOAD_BUILD_ENV_HOME)/configs/xiangshan_defconfig arch/riscv/configs/xiangshan_defconfig && \
-			$(MAKE) xiangshan_defconfig; \
-		fi && \
+		cp $(WORKLOAD_BUILD_ENV_HOME)/configs/xiangshan_defconfig arch/riscv/configs/xiangshan_defconfig && \
+		$(MAKE) xiangshan_defconfig && \
 		[ -n "$(RISCV_LD_SO)" ] && [ -n "$(RISCV_LIBC_SO)" ] && \
 		[ -n "$(RISCV_LIBRESOLV_SO)" ] && [ -n "$(RISCV_LIBM_SO)" ] && \
 		[ -n "$(RISCV_LIBDL_SO)" ] && [ -n "$(RISCV_LIBPTHREAD_SO)" ] && \
@@ -173,7 +198,19 @@ build-linux:
 		./scripts/config --enable CONFIG_SPARSEMEM_VMEMMAP && \
 		./scripts/config --enable CONFIG_DEFERRED_STRUCT_PAGE_INIT
 	@echo "Building Linux kernel..."
-	@cd $(RISCV_LINUX_HOME) && yes ""|$(MAKE) -j$(shell nproc) || exit $$?
+	@mkdir -p $(FIRMWARE_LOG_DIR)
+	@if [ "$(SHOW_LINUX_BUILD_LOG)" = "1" ]; then \
+		cd $(RISCV_LINUX_HOME) && yes "" | $(MAKE) -j$(shell nproc); \
+	else \
+		cd $(RISCV_LINUX_HOME) && yes "" | $(MAKE) -j$(shell nproc) > "$(LINUX_BUILD_LOG)" 2>&1 || { \
+			status=$$?; \
+			echo "✗ Linux kernel build failed. Full log: $(LINUX_BUILD_LOG)"; \
+			echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(LINUX_BUILD_LOG) ---"; \
+			tail -n $(BUILD_LOG_TAIL_LINES) "$(LINUX_BUILD_LOG)"; \
+			exit $$status; \
+		}; \
+		echo "  Linux build log: $(LINUX_BUILD_LOG)"; \
+	fi
 	@echo "✓ Linux kernel built: $(LINUX_IMAGE)"
 
 build-dtb-std: setup-submodules
@@ -223,18 +260,34 @@ build-dtb-xsai: setup-submodules
 #   fdt_addr = round_up(image_size + 0x800000, 0x100000) + 0x80000000
 build-opensbi:
 	@echo "Building OpenSBI firmware..."
+	@mkdir -p $(FIRMWARE_LOG_DIR)
 	@FW_SIZE=$$(stat -c%s $(LINUX_IMAGE)) && \
 	 FW_FDT_ADDR=$$(python3 -c \
 	   "sz=$$FW_SIZE; print(hex(((sz+0x800000+0xfffff)//0x100000)*0x100000+0x80000000))") && \
 	 echo "  Image size     : $$FW_SIZE bytes" && \
 	 echo "  FW_PAYLOAD_FDT_ADDR: $$FW_FDT_ADDR" && \
-	 cd $(OPENSBI) && \
-	 $(MAKE) PLATFORM=generic \
-		FW_PAYLOAD_PATH=$(LINUX_IMAGE) \
-		FW_FDT_PATH=$(DTB_FILE) \
-		FW_PAYLOAD_OFFSET=0x100000 \
-		FW_PAYLOAD_FDT_ADDR=$$FW_FDT_ADDR \
-		-j$(shell nproc) || exit $$?
+	 if [ "$(SHOW_OPENSBI_BUILD_LOG)" = "1" ]; then \
+		cd $(OPENSBI) && $(MAKE) PLATFORM=generic \
+			FW_PAYLOAD_PATH=$(LINUX_IMAGE) \
+			FW_FDT_PATH=$(DTB_FILE) \
+			FW_PAYLOAD_OFFSET=0x100000 \
+			FW_PAYLOAD_FDT_ADDR=$$FW_FDT_ADDR \
+			-j$(shell nproc); \
+	 else \
+		cd $(OPENSBI) && $(MAKE) PLATFORM=generic \
+			FW_PAYLOAD_PATH=$(LINUX_IMAGE) \
+			FW_FDT_PATH=$(DTB_FILE) \
+			FW_PAYLOAD_OFFSET=0x100000 \
+			FW_PAYLOAD_FDT_ADDR=$$FW_FDT_ADDR \
+			-j$(shell nproc) > "$(OPENSBI_BUILD_LOG)" 2>&1 || { \
+				status=$$?; \
+				echo "✗ OpenSBI build failed. Full log: $(OPENSBI_BUILD_LOG)"; \
+				echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(OPENSBI_BUILD_LOG) ---"; \
+				tail -n $(BUILD_LOG_TAIL_LINES) "$(OPENSBI_BUILD_LOG)"; \
+				exit $$status; \
+			}; \
+		echo "  OpenSBI build log: $(OPENSBI_BUILD_LOG)"; \
+	 fi
 	@echo "✓ OpenSBI payload built: $(OPENSBI_PAYLOAD)"
 
 build-gcpt:
@@ -242,11 +295,37 @@ build-gcpt:
 		echo "Initializing gcpt_restore submodule..."; \
 		cd $(WORK_DIR) && git submodule update --init --force gcpt_restore; \
 	fi
-	cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin || exit $$?
+	@mkdir -p $(FIRMWARE_LOG_DIR)
+	@if [ "$(SHOW_GCPT_BUILD_LOG)" = "1" ]; then \
+		cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin; \
+	else \
+		( cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin ) > "$(GCPT_BUILD_LOG)" 2>&1 || { \
+			status=$$?; \
+			echo "✗ GCPT build failed. Full log: $(GCPT_BUILD_LOG)"; \
+			echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(GCPT_BUILD_LOG) ---"; \
+			tail -n $(BUILD_LOG_TAIL_LINES) "$(GCPT_BUILD_LOG)"; \
+			exit $$status; \
+		}; \
+		echo "  GCPT build log: $(GCPT_BUILD_LOG)"; \
+	fi
+	@echo "✓ GCPT binary built: $(GCPT_BIN)"
 
 # Force a clean rebuild of gcpt (useful after editing src/csr.h etc.)
 build-gcpt-clean:
-	cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin || exit $$?
+	@mkdir -p $(FIRMWARE_LOG_DIR)
+	@if [ "$(SHOW_GCPT_BUILD_LOG)" = "1" ]; then \
+		cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin; \
+	else \
+		( cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin ) > "$(GCPT_BUILD_LOG)" 2>&1 || { \
+			status=$$?; \
+			echo "✗ GCPT build failed. Full log: $(GCPT_BUILD_LOG)"; \
+			echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(GCPT_BUILD_LOG) ---"; \
+			tail -n $(BUILD_LOG_TAIL_LINES) "$(GCPT_BUILD_LOG)"; \
+			exit $$status; \
+		}; \
+		echo "  GCPT build log: $(GCPT_BUILD_LOG)"; \
+	fi
+	@echo "✓ GCPT binary built: $(GCPT_BIN)"
 build-gcpt-t1:
 	@echo "Building GCPT checkpoint tool..."
 # git checkout f8c33689cdf11aa2f8f25dbf99075dca148ecd44
@@ -265,7 +344,7 @@ build-gcpt-t1:
 
 clean:
 	@echo "Cleaning build artifacts..."
-	@[ -d "$(RISCV_LINUX_HOME)" ] && cd $(RISCV_LINUX_HOME) && $(MAKE) clean || true
+	@[ -d "$(RISCV_LINUX_HOME)" ] && cd $(RISCV_LINUX_HOME) && $(MAKE) mrproper || true
 	@[ -d "$(OPENSBI)" ] && cd $(OPENSBI) && $(MAKE) clean && rm -rf build || true
 	@[ -d "$(GCPT_HOME)" ] && cd $(GCPT_HOME) && $(MAKE) clean || true
 	@[ -d "$(GCPT_RESTORE_HOME)" ] && cd $(GCPT_RESTORE_HOME) && $(MAKE) clean || true
