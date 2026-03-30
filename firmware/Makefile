@@ -196,7 +196,12 @@ build-linux:
 		./scripts/config --disable CONFIG_FLATMEM_MANUAL && \
 		./scripts/config --enable CONFIG_SPARSEMEM_MANUAL && \
 		./scripts/config --enable CONFIG_SPARSEMEM_VMEMMAP && \
-		./scripts/config --enable CONFIG_DEFERRED_STRUCT_PAGE_INIT
+		./scripts/config --enable CONFIG_DEFERRED_STRUCT_PAGE_INIT && \
+		./scripts/config --enable CONFIG_TRANSPARENT_HUGEPAGE && \
+		./scripts/config --disable CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS && \
+		./scripts/config --enable CONFIG_TRANSPARENT_HUGEPAGE_MADVISE && \
+		./scripts/config --enable CONFIG_PERF_EVENTS && \
+		./scripts/config --enable CONFIG_RISCV_PMU_SBI
 	@echo "Building Linux kernel..."
 	@mkdir -p $(FIRMWARE_LOG_DIR)
 	@if [ "$(SHOW_LINUX_BUILD_LOG)" = "1" ]; then \

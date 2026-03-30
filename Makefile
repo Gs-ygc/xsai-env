@@ -1,8 +1,11 @@
-.PHONY: help deps init init-force llvm gsim nix-shell nix-init nix-test nix-firmware smoke test-smoke nix-smoke update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform ccdb ccdb-append pldm _ensure_qemu _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
+.PHONY: help deps init init-force llvm gsim nix-shell nix-init nix-test smoke test-smoke nix-smoke update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform ccdb ccdb-append pldm _ensure_qemu _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
 
 SHELL := /bin/bash
 
 GIT_FORCE_INIT ?= 1
+
+# Include PLDM build configurations
+include mk/pldm.mk
 
 XS_PROJECT_ROOT ?= $(shell pwd)
 NEMU_HOME ?= $(XS_PROJECT_ROOT)/NEMU
@@ -37,23 +40,23 @@ DOCKER_USER ?= $(DOCKER_UID):$(DOCKER_GID)
 SIMPOINT_HOME := $(NEMU_HOME)/resource/simpoint/simpoint_repo
 SIMPOINT_BIN  := $(SIMPOINT_HOME)/bin/simpoint
 MODEL_IMG     ?=
-CPT_INTERVAL  ?= 100000
+CPT_INTERVAL  ?= 100
 PROFILING_INTERVALS ?= $(CPT_INTERVAL)
 SIMPOINT_MAX_K      ?= 10
 MEMORY        ?= 4G
 SMP           ?= 1
 # Pass extra args straight to checkpoint.sh, e.g. CKPT_ARGS="--config my-run"
 CKPT_ARGS     ?=
+# llama.cpp model selection (passed through to firmware/riscv-rootfs/apps/llama.cpp)
+LLAMA_MODEL_PRESET  ?= stories15M
+LLAMA_MODEL_KIND    ?=
+LLAMA_MODEL_NAME    ?=
+LLAMA_MODEL_PATH    ?=
+LLAMA_MODEL_QUANTIZE ?=
+
 CCDB          ?= $(XS_PROJECT_ROOT)/local/compile_commands.json
 CCDB_MAKE     ?= firmware
 CCDB_SCRIPT   := ./scripts/update-compile-commands.sh
-PLDM_TAR_PREFIX ?= XSAI-pldm
-PLDM_BUILD_TARGET ?= verilog
-PLDM_BUILD_FLAGS ?= WITH_CHISELDB=0 WITH_CONSTANTIN=0 MFC=1 PLDM=1
-PLDM_BUILD_BACKUP_PREFIX ?= $(NOOP_HOME)/.pldm-build-backup
-PLDM_NEMU_SO ?= $(XS_PROJECT_ROOT)/local/riscv64-nemu-interpreter-so
-PLDM_SKIP_BUILD ?= 0
-PLDM_COMPRESS ?= 0
 
 help:
 	@echo "XSAI Environment Manager"
@@ -61,7 +64,7 @@ help:
 	@echo "  make deps        - Install system dependencies (requires sudo)"
 	@echo "  make init        - Initialize submodules and environment"
 	@echo "  make init-force  - Force initialize submodules to avoid empty folders"
-	@echo "  make llvm        - Build custom LLVM toolchain"
+	@echo "  make llvm        - Build custom LLVM toolchain (uses system compiler)"
 	@echo "  make gsim        - Install the latest gsim binary to local/bin"
 	@echo "  make nix-shell   - Enter the reproducible Nix devshell"
 	@echo "  make nix-init    - Run make init-force inside the Nix devshell"
@@ -119,9 +122,6 @@ nix-init:
 nix-test:
 	$(NIX_DEVELOP) make test
 
-nix-firmware:
-	$(NIX_DEVELOP) make firmware
-
 test-smoke:
 	./scripts/smoke-test.sh --mode manual
 
@@ -172,21 +172,28 @@ update:
 versions:
 	./scripts/update-versions.sh
 
-pldm:
-	@XS_PROJECT_ROOT="$(XS_PROJECT_ROOT)" \
-	NOOP_HOME="$(NOOP_HOME)" \
-	PLDM_TAR_PREFIX="$(PLDM_TAR_PREFIX)" \
-	PLDM_BUILD_TARGET="$(PLDM_BUILD_TARGET)" \
-	PLDM_BUILD_FLAGS="$(PLDM_BUILD_FLAGS)" \
-	PLDM_BUILD_BACKUP_PREFIX="$(PLDM_BUILD_BACKUP_PREFIX)" \
-	PLDM_NEMU_SO="$(PLDM_NEMU_SO)" \
-	PLDM_SKIP_BUILD="$(PLDM_SKIP_BUILD)" \
-	PLDM_COMPRESS="$(PLDM_COMPRESS)" \
-	./scripts/pldm-package.sh
 test:
 	./scripts/env-test.sh
+# Build model passthrough flags (only override when user set non-default values)
+_LLAMA_EXTRA :=
+ifneq ($(LLAMA_MODEL_PRESET),stories15M)
+_LLAMA_EXTRA += MODEL_PRESET=$(LLAMA_MODEL_PRESET)
+endif
+ifneq ($(LLAMA_MODEL_KIND),)
+_LLAMA_EXTRA += MODEL_KIND=$(LLAMA_MODEL_KIND)
+endif
+ifneq ($(LLAMA_MODEL_NAME),)
+_LLAMA_EXTRA += MODEL_NAME=$(LLAMA_MODEL_NAME)
+endif
+ifneq ($(LLAMA_MODEL_PATH),)
+_LLAMA_EXTRA += MODEL_SOURCE_PATH=$(abspath $(LLAMA_MODEL_PATH))
+endif
+ifneq ($(LLAMA_MODEL_QUANTIZE),)
+_LLAMA_EXTRA += MODEL_QUANTIZE=$(LLAMA_MODEL_QUANTIZE)
+endif
+
 firmware:
-	$(MAKE) -C firmware all
+	$(MAKE) -C firmware all $(_LLAMA_EXTRA)
 
 ccdb:
 	$(CCDB_SCRIPT) --db "$(CCDB)" -- make $(CCDB_MAKE)
@@ -194,12 +201,12 @@ ccdb:
 ccdb-append:
 	$(CCDB_SCRIPT) --append --db "$(CCDB)" -- make $(CCDB_MAKE)
 
-DIFF      ?= 0
+DIFF      ?= 1
 LOG       ?= 0
 EMU_SCRIPT := ./scripts/run-emu.sh
 EMU_FLAGS   = $(if $(filter 1,$(LOG)),--log,) $(if $(filter 1,$(DIFF)),--diff,)
 
-run-emu: _ensure_emu
+run-emu: _ensure_payload _ensure_emu
 	$(EMU_SCRIPT) $(EMU_FLAGS) $(PAYLOAD)
 
 # RTL debug shortcut — captures both FST waveform and ChiselDB in one pass.
@@ -226,7 +233,7 @@ run-emu-debug: _ensure_emu
 
 RESTORER  ?= $(GCPT_RESTORE_HOME)/build/gcpt.bin
 
-run-nemu: _ensure_nemu
+run-nemu: _ensure_payload _ensure_nemu
 	@case "$(PAYLOAD)" in \
 	  *.gz|*.zstd|*.zst) \
 	    $(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(PAYLOAD) -r $(RESTORER) ;; \
@@ -240,7 +247,7 @@ run-nemu: _ensure_nemu
 run-user:
 	@$(QEMU_HOME)/build/qemu-riscv64 -cpu $(QEMU_CPU_FLAGS) firmware/riscv-rootfs/rootfsimg/build/hello_xsai
 
-run-qemu: _ensure_qemu
+run-qemu: _ensure_payload _ensure_qemu
 	@echo "Running QEMU simulation..."
 	@case "$(PAYLOAD)" in \
 	  *.gz|*.zstd|*.zst) \
@@ -312,8 +319,19 @@ _ensure_nemu:
 _ensure_qemu:
 	@test -f $(PROFILING_PLUGIN) || $(MAKE) qemu
 
+_ensure_payload:
+	@case "$(PAYLOAD)" in \
+	  "$(GCPT_RESTORE_HOME)/build/gcpt.bin") \
+	    if [ ! -f "$(PAYLOAD)" ]; then \
+	      echo "[payload] gcpt.bin not found, building firmware..."; \
+	      $(MAKE) firmware; \
+	    fi ;; \
+	  *) \
+	    test -f "$(PAYLOAD)" || { echo "Payload not found: $(PAYLOAD)" >&2; exit 1; } ;; \
+	esac
+
 _ensure_firmware:
-	@test -f $(PAYLOAD) || $(MAKE) firmware
+	@$(MAKE) _ensure_payload
 
 profile: _ensure_qemu _ensure_firmware
 	$(CKPT_SCRIPT) profile $(CKPT_COMMON_FLAGS)

@@ -1,0 +1,31 @@
+--- a/drivers/perf/riscv_pmu_sbi.c
++++ b/drivers/perf/riscv_pmu_sbi.c
+@@ -85,7 +85,7 @@
+ };
+ 
+ /* Allow user mode access by default */
+-static int sysctl_perf_user_access __read_mostly = SYSCTL_USER_ACCESS;
++static int sysctl_perf_user_access __read_mostly = SYSCTL_LEGACY;
+ 
+ /*
+  * RISC-V doesn't have heterogeneous harts yet. This need to be part of
+@@ -1161,8 +1161,18 @@
+ 
+ 	/*
+ 	 * Stop all the counters so that they can be enabled from perf.
++	 * In legacy mode keep fixed counters (cycle=0, instret=2) running so
++	 * that unprivileged rdcycle/rdinstret work without a perf_event_open
++	 * call (mcountinhibit bits 0 and 2 must stay clear).
+ 	 */
+-	pmu_sbi_stop_all(pmu);
++	if (sysctl_perf_user_access == SYSCTL_LEGACY) {
++		unsigned long mask = pmu->cmask & ~BIT(0) & ~BIT(2);
++		if (mask)
++			sbi_ecall(SBI_EXT_PMU, SBI_EXT_PMU_COUNTER_STOP,
++				  0, mask, SBI_PMU_STOP_FLAG_RESET, 0, 0, 0);
++	} else {
++		pmu_sbi_stop_all(pmu);
++	}
+ 
+ 	if (riscv_pmu_use_irq) {
+ 		cpu_hw_evt->irq = riscv_pmu_irq;

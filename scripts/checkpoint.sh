@@ -296,8 +296,8 @@ case "$PHASE" in
     checkpoint) do_checkpoint ;;
     uniform)    do_uniform ;;
     all)
-        do_profile
-        do_cluster
+        # do_profile
+        # do_cluster
         do_checkpoint
         ;;
     *)

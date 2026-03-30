@@ -5,6 +5,10 @@ _xsai_env_root() {
   cd "$(dirname "$script_path")/.." && pwd
 }
 
+xsai_env_resolver() {
+  printf '%s/scripts/resolve-riscv-env.sh\n' "$(_xsai_env_root)"
+}
+
 xsai_env_prepend_path() {
   local path_entry="$1"
   [[ -n "$path_entry" && -d "$path_entry" ]] || return 0
@@ -15,43 +19,45 @@ xsai_env_prepend_path() {
 }
 
 xsai_env_detect_riscv_root() {
-  local prefix="${CROSS_COMPILE:-}"
-  local candidates=()
-  if [[ -n "$prefix" ]]; then
-    candidates+=("$prefix")
+  local resolver
+  resolver="$(xsai_env_resolver)"
+
+  if [[ -x "$resolver" ]]; then
+    "$resolver" root
+    return $?
   fi
-  candidates+=("riscv64-unknown-linux-gnu-" "riscv64-linux-gnu-")
-  local known_server="/nfs/share/riscv-toolchain-gcc15-250103"
-  local known_host="/opt/riscv"
-  local candidate gcc_path
 
   if [[ -n "${RISCV:-}" && -d "${RISCV}" ]]; then
     printf '%s\n' "$RISCV"
     return 0
   fi
 
-  if [[ -n "${IN_NIX_SHELL:-}" ]]; then
-    for candidate in "${candidates[@]}"; do
-      if gcc_path="$(command -v "${candidate}gcc" 2>/dev/null)"; then
-        cd "$(dirname "$gcc_path")/.." && pwd
-        return 0
-      fi
-    done
+  return 1
+}
+
+xsai_env_detect_riscv_sysroot() {
+  local resolver
+  resolver="$(xsai_env_resolver)"
+
+  if [[ -x "$resolver" ]]; then
+    "$resolver" sysroot
+    return $?
   fi
 
-  for candidate in "$known_server" "$known_host"; do
-    if [[ -d "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
+  if [[ -n "${RISCV_SYSROOT:-}" && -d "${RISCV_SYSROOT}" ]]; then
+    printf '%s\n' "$RISCV_SYSROOT"
+    return 0
+  fi
 
-  for candidate in "${candidates[@]}"; do
-    if gcc_path="$(command -v "${candidate}gcc" 2>/dev/null)"; then
-      cd "$(dirname "$gcc_path")/.." && pwd
-      return 0
-    fi
-  done
+  if [[ -n "${QEMU_LD_PREFIX:-}" && -d "${QEMU_LD_PREFIX}" ]]; then
+    printf '%s\n' "$QEMU_LD_PREFIX"
+    return 0
+  fi
+
+  if [[ -n "${RISCV:-}" && -d "${RISCV}/sysroot" ]]; then
+    printf '%s\n' "${RISCV}/sysroot"
+    return 0
+  fi
 
   return 1
 }
@@ -84,23 +90,9 @@ xsai_env_init() {
   fi
 
   local sysroot=""
-  local sysroot_prefix="${CROSS_COMPILE:-}"
-  local sysroot_candidates=()
-  if [[ -n "$sysroot_prefix" ]]; then
-    sysroot_candidates+=("$sysroot_prefix")
-  fi
-  sysroot_candidates+=("riscv64-unknown-linux-gnu-" "riscv64-linux-gnu-")
-  for candidate in "${sysroot_candidates[@]}"; do
-    if command -v "${candidate}gcc" >/dev/null 2>&1; then
-      sysroot="$("${candidate}gcc" -print-sysroot 2>/dev/null || true)"
-      [[ -n "$sysroot" ]] && break
-    fi
-  done
-  if [[ -n "$sysroot" && -d "$sysroot" ]]; then
-    sysroot="$(cd "$sysroot" && pwd)"
+  if sysroot="$(xsai_env_detect_riscv_sysroot 2>/dev/null)"; then
+    export RISCV_SYSROOT="${RISCV_SYSROOT:-$sysroot}"
     export QEMU_LD_PREFIX="${QEMU_LD_PREFIX:-$sysroot}"
-  elif [[ -n "${RISCV:-}" && -d "$RISCV/sysroot" ]]; then
-    export QEMU_LD_PREFIX="${QEMU_LD_PREFIX:-$RISCV/sysroot}"
   fi
 }
 
@@ -116,5 +108,11 @@ xsai_env_print_summary() {
     echo SET RISCV: "${RISCV}"
   else
     echo WARN RISCV: not resolved, expect compiler on PATH or set RISCV manually
+  fi
+  if [[ -n "${RISCV_SYSROOT:-}" ]]; then
+    echo SET RISCV_SYSROOT: "${RISCV_SYSROOT}"
+  fi
+  if [[ -n "${QEMU_LD_PREFIX:-}" ]]; then
+    echo SET QEMU_LD_PREFIX: "${QEMU_LD_PREFIX}"
   fi
 }
