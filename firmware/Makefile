@@ -26,9 +26,8 @@ include $(RISCV_ROOTFS_HOME)/riscv-lib-paths.mk
 DIRECT_MAP_MEM_START ?=
 DIRECT_MAP_MEM_SIZE ?=
 DTS_DIRECT_MAP_ARGS := $(if $(and $(DIRECT_MAP_MEM_START),$(DIRECT_MAP_MEM_SIZE)),--direct-map-mem $(DIRECT_MAP_MEM_START) $(DIRECT_MAP_MEM_SIZE),)
-XSAI_MEMORY_SIZE ?= 0x80000000
-XSAI_DIRECT_MAP_MEM_START ?= 0x100000000
-XSAI_DIRECT_MAP_MEM_SIZE ?= 0x6400000
+# Memory layout: QEMU size, kernel RAM, XSAI DMA pool — all defaults from mk/memory.mk
+include $(XS_PROJECT_ROOT)/mk/memory.mk
 XSAI_COMPATIBLE ?= xiangshan,ai-nemu-board xiangshan,nemu-board
 XSAI_MODEL ?= XiangShan AI
 XSAI_EXTRA_ISA_EXTENSIONS ?= zame zammai8i32
@@ -189,6 +188,10 @@ build-linux:
 		./scripts/config --enable CONFIG_RISCV_ISA_V_DEFAULT_ENABLE && \
 		./scripts/config --set-val CONFIG_RISCV_ISA_V_UCOPY_THRESHOLD 768 && \
 		./scripts/config --enable CONFIG_RISCV_ISA_V_PREEMPTIVE && \
+		./scripts/config --disable CONFIG_RISCV_ISA_ZICBOZ && \
+		./scripts/config --disable CONFIG_RISCV_ISA_ZICBOP && \
+		./scripts/config --disable CONFIG_RISCV_ISA_ZICBOM && \
+		./scripts/config --disable CONFIG_SMP && \
 		./scripts/config --enable CONFIG_DEVMEM && \
 		./scripts/config --disable CONFIG_STRICT_DEVMEM && \
 		./scripts/config --disable CONFIG_IO_STRICT_DEVMEM && \
@@ -272,14 +275,14 @@ build-opensbi:
 	 echo "  Image size     : $$FW_SIZE bytes" && \
 	 echo "  FW_PAYLOAD_FDT_ADDR: $$FW_FDT_ADDR" && \
 	 if [ "$(SHOW_OPENSBI_BUILD_LOG)" = "1" ]; then \
-		cd $(OPENSBI) && $(MAKE) PLATFORM=generic \
+		cd $(OPENSBI) && rm -rf build && $(MAKE) PLATFORM=generic \
 			FW_PAYLOAD_PATH=$(LINUX_IMAGE) \
 			FW_FDT_PATH=$(DTB_FILE) \
 			FW_PAYLOAD_OFFSET=0x100000 \
 			FW_PAYLOAD_FDT_ADDR=$$FW_FDT_ADDR \
 			-j$(shell nproc); \
 	 else \
-		cd $(OPENSBI) && $(MAKE) PLATFORM=generic \
+		cd $(OPENSBI) && rm -rf build && $(MAKE) PLATFORM=generic \
 			FW_PAYLOAD_PATH=$(LINUX_IMAGE) \
 			FW_FDT_PATH=$(DTB_FILE) \
 			FW_PAYLOAD_OFFSET=0x100000 \

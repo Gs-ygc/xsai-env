@@ -10,18 +10,18 @@ PLDM_BUILD_BACKUP_PREFIX ?= $(NOOP_HOME)/.pldm-build-backup
 PLDM_NEMU_SO            ?= $(XS_PROJECT_ROOT)/local/riscv64-nemu-interpreter-so
 PLDM_SKIP_BUILD         ?= 0
 PLDM_COMPRESS           ?= 1
-PLDM_KEEP_BUILD         ?= 1
+PLDM_KEEP_BUILD         ?= 0
 
 # Default PLDM configuration (local development)
 PLDM_CONFIG_DEFAULT := DefaultMatrixConfig
 PLDM_FLAGS_DEFAULT  := CONFIG=$(PLDM_CONFIG_DEFAULT) \
                        PLDM=1 MFC=1 \
                        WITH_CHISELDB=0 WITH_CONSTANTIN=0 \
-                       SIM_MEM_SIZE=8 RELEASE=1 DISABLE_ALWAYSDBG=1 \
+                       SIM_MEM_SIZE=8 \
                        DEBUG_ARGS="--difftest-config ZESNHP"
 
 # CI/Nightly configuration (matches .github/workflows/fpga.yml)
-PLDM_CONFIG_CI      := DefaultConfig
+PLDM_CONFIG_CI      := DefaultMatrixConfig
 PLDM_FLAGS_CI       := CONFIG=$(PLDM_CONFIG_CI) \
                        PLDM=1 NUM_CORES=1 \
                        WITH_CHISELDB=0 WITH_CONSTANTIN=0 \

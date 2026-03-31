@@ -4,9 +4,6 @@ SHELL := /bin/bash
 
 GIT_FORCE_INIT ?= 1
 
-# Include PLDM build configurations
-include mk/pldm.mk
-
 XS_PROJECT_ROOT ?= $(shell pwd)
 NEMU_HOME ?= $(XS_PROJECT_ROOT)/NEMU
 AM_HOME ?= $(XS_PROJECT_ROOT)/nexus-am
@@ -43,7 +40,6 @@ MODEL_IMG     ?=
 CPT_INTERVAL  ?= 100
 PROFILING_INTERVALS ?= $(CPT_INTERVAL)
 SIMPOINT_MAX_K      ?= 10
-MEMORY        ?= 4G
 SMP           ?= 1
 # Pass extra args straight to checkpoint.sh, e.g. CKPT_ARGS="--config my-run"
 CKPT_ARGS     ?=
@@ -97,6 +93,11 @@ help:
 	@echo "  make ckpt PHASE=profile|cluster|checkpoint  - Run a single phase"
 	@echo "  Knobs: WORKLOAD_NAME CPT_INTERVAL PROFILING_INTERVALS SIMPOINT_MAX_K"
 	@echo "         MEMORY SMP CHECKPOINT_CONFIG MODEL_IMG CKPT_ARGS"
+
+# Include PLDM build configurations
+include mk/pldm.mk
+# Memory layout defaults (QEMU size, DTB node, XSAI pool)
+include mk/memory.mk
 
 deps:
 	./scripts/setup-tools.sh
