@@ -12,6 +12,8 @@ GCPT_RESTORE_HOME ?= $(XS_PROJECT_ROOT)/firmware/gcpt_restore
 #LibCheckpoint (多核用)
 
 PAYLOAD := $(GCPT_RESTORE_HOME)/build/gcpt.bin
+RESTORER_BUILD_ROOT := $(GCPT_RESTORE_HOME)/restore-only
+RESTORER := $(RESTORER_BUILD_ROOT)/build/gcpt.bin
 
 # Canonical QEMU CPU flags — keep in sync with scripts/checkpoint.sh CPU_FLAGS
 QEMU_CPU_FLAGS ?= rv64,v=true,vlen=128,h=true,sstc=true,svpbmt=true,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false
@@ -149,11 +151,10 @@ run-emu-debug: _ensure_emu
 	  --db --db-select "$(DB_SELECT)" \
 	  $(PAYLOAD)
 
-RESTORER  ?= $(GCPT_RESTORE_HOME)/build/gcpt.bin
-
 run-nemu: _ensure_nemu
 	@case "$(PAYLOAD)" in \
 	  *.gz|*.zstd|*.zst) \
+	    test -f $(RESTORER) || $(MAKE) -C firmware build-gcpt-restore; \
 	    $(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(PAYLOAD) -r $(RESTORER) ;; \
 	  *) \
 	    $(NEMU_HOME)/build/riscv64-nemu-interpreter -b $(PAYLOAD) ;; \
@@ -169,6 +170,7 @@ run-qemu: _ensure_qemu
 	@echo "Running QEMU simulation..."
 	@case "$(PAYLOAD)" in \
 	  *.gz|*.zstd|*.zst) \
+	    test -f $(RESTORER) || $(MAKE) -C firmware build-gcpt-restore; \
 	    $(QEMU_SYSTEM_BIN) \
 	      -M nemu,checkpoint=$(PAYLOAD),gcpt-restore=$(RESTORER) \
 	      -nographic -m $(MEMORY) -smp $(SMP) \

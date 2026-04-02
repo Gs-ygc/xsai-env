@@ -42,9 +42,11 @@ LINUX_IMAGE := $(RISCV_LINUX_HOME)/arch/riscv/boot/Image
 STD_DTB_FILE := $(WORKLOAD_BUILD_ENV_HOME)/dts/build/xiangshan.dtb
 DTB_FILE ?= $(XSAI_DTB_FILE)
 OPENSBI_PAYLOAD := $(OPENSBI)/build/platform/generic/firmware/fw_payload.bin
-GCPT_BIN := $(GCPT_RESTORE_HOME)/build/gcpt.bin
+GCPT_BOOT_BIN := $(GCPT_RESTORE_HOME)/build/gcpt.bin
+GCPT_RESTORE_BUILD_ROOT := $(GCPT_RESTORE_HOME)/restore-only
+GCPT_RESTORE_BIN := $(GCPT_RESTORE_BUILD_ROOT)/build/gcpt.bin
 
-.PHONY: all check-env download-linux setup-submodules init init-force build-rootfs build-linux build-dtb build-dtb-std build-dtb-xsai build-opensbi build-gcpt build-gcpt-clean clean distclean help
+.PHONY: all check-env download-linux setup-submodules init init-force build-rootfs build-linux build-dtb build-dtb-std build-dtb-xsai build-opensbi build-gcpt build-gcpt-restore build-gcpt-clean clean distclean help
 
 all:
 	@$(MAKE) build-rootfs 
@@ -52,11 +54,13 @@ all:
 	@$(MAKE) build-dtb
 	@$(MAKE) build-opensbi
 	@$(MAKE) build-gcpt
+	@$(MAKE) build-gcpt-restore
 	@echo "✓ Build complete!"
 	@echo "  Linux Image: $(LINUX_IMAGE)"
 	@echo "  DTB: $(DTB_FILE)"
 	@echo "  OpenSBI Payload: $(OPENSBI_PAYLOAD)"
-	@echo "  GCPT Binary: $(GCPT_BIN)"
+	@echo "  GCPT Boot Binary: $(GCPT_BOOT_BIN)"
+	@echo "  GCPT Restore Binary: $(GCPT_RESTORE_BIN)"
 
 help:
 	@echo "RISC-V Firmware Build System"
@@ -79,7 +83,8 @@ help:
 	@echo "                     Optional: DIRECT_MAP_MEM_START=0x100000000 DIRECT_MAP_MEM_SIZE=0x180000000"
 	@echo "  build-dtb-xsai   - Build XSAI-specific device tree blob"
 	@echo "  build-opensbi    - Build OpenSBI firmware"
-	@echo "  build-gcpt       - Build GCPT checkpoint tool (incremental)"
+	@echo "  build-gcpt       - Build bootable GCPT binary linked with the payload"
+	@echo "  build-gcpt-restore - Build restore-only GCPT binary for checkpoint resume"
 	@echo "  build-gcpt-clean - Force clean rebuild of GCPT (after editing csr.h etc.)"
 	@echo "  clean            - Clean build artifacts"
 	@echo "  distclean        - Deep clean: remove downloads and deinit submodules"
@@ -237,6 +242,13 @@ build-gcpt:
 	fi
 	cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin || exit $$?
 
+build-gcpt-restore:
+	@if [ ! -f "$(GCPT_RESTORE_HOME)/Makefile" ]; then \
+		echo "Initializing gcpt_restore submodule..."; \
+		cd $(WORK_DIR) && git submodule update --init --force gcpt_restore; \
+	fi
+	cd $(GCPT_RESTORE_HOME) && $(MAKE) O=$(GCPT_RESTORE_BUILD_ROOT) clean && $(MAKE) O=$(GCPT_RESTORE_BUILD_ROOT) -j && ls $(GCPT_RESTORE_BIN) || exit $$?
+
 # Force a clean rebuild of gcpt (useful after editing src/csr.h etc.)
 build-gcpt-clean:
 	cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin || exit $$?
@@ -262,6 +274,7 @@ clean:
 	@[ -d "$(OPENSBI)" ] && cd $(OPENSBI) && $(MAKE) clean && rm -rf build || true
 	@[ -d "$(GCPT_HOME)" ] && cd $(GCPT_HOME) && $(MAKE) clean || true
 	@[ -d "$(GCPT_RESTORE_HOME)" ] && cd $(GCPT_RESTORE_HOME) && $(MAKE) clean || true
+	@rm -rf $(GCPT_RESTORE_BUILD_ROOT)
 	@[ -d "$(RISCV_ROOTFS_HOME)" ] && cd $(RISCV_ROOTFS_HOME) && $(MAKE) clean || true
 	@echo "✓ Clean complete"
 
