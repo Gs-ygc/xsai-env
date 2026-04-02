@@ -1,4 +1,6 @@
-.PHONY: help deps init init-force llvm update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform _ensure_qemu _ensure_qemu_user _ensure_qemu_plugin _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
+.PHONY: help deps init init-force llvm gsim nix-shell nix-init nix-test smoke test-smoke nix-smoke update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform ccdb ccdb-append pldm _ensure_qemu _ensure_qemu_user _ensure_qemu_plugin _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
+
+SHELL := /bin/bash
 
 GIT_FORCE_INIT ?= 1
 
@@ -8,8 +10,13 @@ AM_HOME ?= $(XS_PROJECT_ROOT)/nexus-am
 NOOP_HOME ?= $(XS_PROJECT_ROOT)/XSAI
 LLVM_HOME ?= $(XS_PROJECT_ROOT)/local/llvm
 QEMU_HOME ?= $(XS_PROJECT_ROOT)/qemu
+QEMU_HOST_CC ?= gcc
+QEMU_HOST_CXX ?= g++
 GCPT_RESTORE_HOME ?= $(XS_PROJECT_ROOT)/firmware/gcpt_restore
-#LibCheckpoint (多核用)
+export XS_PROJECT_ROOT NEMU_HOME AM_HOME NOOP_HOME LLVM_HOME QEMU_HOME GCPT_RESTORE_HOME
+NIX_DEVSHELL ?= .\#default
+NIX_DEVELOP ?= nix develop $(NIX_DEVSHELL) -c
+# LibCheckpoint for multicore flows
 
 PAYLOAD := $(GCPT_RESTORE_HOME)/build/gcpt.bin
 RESTORER_BUILD_ROOT := $(GCPT_RESTORE_HOME)/restore-only
@@ -32,10 +39,9 @@ DOCKER_USER ?= $(DOCKER_UID):$(DOCKER_GID)
 SIMPOINT_HOME := $(NEMU_HOME)/resource/simpoint/simpoint_repo
 SIMPOINT_BIN  := $(SIMPOINT_HOME)/bin/simpoint
 MODEL_IMG     ?=
-CPT_INTERVAL  ?= 100000
+CPT_INTERVAL  ?= 100
 PROFILING_INTERVALS ?= $(CPT_INTERVAL)
 SIMPOINT_MAX_K      ?= 10
-MEMORY        ?= 4G
 SMP           ?= 1
 # Pass extra args straight to checkpoint.sh, e.g. CKPT_ARGS="--config my-run"
 CKPT_ARGS     ?=
@@ -43,6 +49,16 @@ QEMU_BUILD_DIR := $(QEMU_HOME)/build
 QEMU_SYSTEM_BIN := $(QEMU_BUILD_DIR)/qemu-system-riscv64
 QEMU_USER_BIN := $(QEMU_BUILD_DIR)/qemu-riscv64
 PROFILING_PLUGIN := $(QEMU_BUILD_DIR)/contrib/plugins/libprofiling.so
+# llama.cpp model selection (passed through to firmware/riscv-rootfs/apps/llama.cpp)
+LLAMA_MODEL_PRESET  ?= stories15M
+LLAMA_MODEL_KIND    ?=
+LLAMA_MODEL_NAME    ?=
+LLAMA_MODEL_PATH    ?=
+LLAMA_MODEL_QUANTIZE ?=
+
+CCDB          ?= $(XS_PROJECT_ROOT)/local/compile_commands.json
+CCDB_MAKE     ?= firmware
+CCDB_SCRIPT   := ./scripts/update-compile-commands.sh
 
 help:
 	@echo "XSAI Environment Manager"
@@ -50,7 +66,13 @@ help:
 	@echo "  make deps        - Install system dependencies (requires sudo)"
 	@echo "  make init        - Initialize submodules and environment"
 	@echo "  make init-force  - Force initialize submodules to avoid empty folders"
-	@echo "  make llvm        - Build custom LLVM toolchain"
+	@echo "  make llvm        - Build custom LLVM toolchain (uses system compiler)"
+	@echo "  make gsim        - Install the latest gsim binary to local/bin"
+	@echo "  make nix-shell   - Enter the reproducible Nix devshell"
+	@echo "  make nix-init    - Run make init-force inside the Nix devshell"
+	@echo "  make nix-test    - Run make test inside the Nix devshell"
+	@echo "  make test-smoke  - Run fast non-build smoke checks"
+	@echo "  make nix-smoke   - Run smoke checks inside the Nix devshell"
 	@echo "  make nemu        - Build NEMU simulator"
 	@echo "  make docker-nemu-image       - Build NEMU Docker image from centos.Dockerfile"
 	@echo "  make nemu-matrix-ref-so-docker - Build riscv64-matrix-xs-ref shared library in Docker"
@@ -58,8 +80,12 @@ help:
 	@echo "  make test-matrix - Run matrix simple test"
 	@echo "  make update      - Update submodules to latest"
 	@echo "  make versions    - Regenerate VERSIONS file from current submodule state"
+	@echo "  make pldm        - Build XSAI verilog, package it, then restore build/"
+	@echo "                     PLDM_SKIP_BUILD=1 skips make; PLDM_COMPRESS=0 writes .tar"
 	@echo "  make test        - Test the environment"
 	@echo "  make run-qemu    - Run QEMU simulation with GCPT payload"
+	@echo "  make ccdb        - Rebuild unified compile_commands.json via bear"
+	@echo "  make ccdb-append - Append a build to compile_commands.json and deduplicate"
 	@echo "  make run-emu-debug PAYLOAD=<p> DIFF=1 WAVE_BEGIN=50000 WAVE_END=180000"
 	@echo "                   - RTL debug: FST wave + ChiselDB (set FORK=1 to skip wave)"
 	@echo "  make clean       - Clean build artifacts (NEMU, AM, firmware, build/)"
@@ -74,6 +100,11 @@ help:
 	@echo "  Knobs: WORKLOAD_NAME CPT_INTERVAL PROFILING_INTERVALS SIMPOINT_MAX_K"
 	@echo "         MEMORY SMP CHECKPOINT_CONFIG MODEL_IMG CKPT_ARGS"
 
+# Include PLDM build configurations
+include mk/pldm.mk
+# Memory layout defaults (QEMU size, DTB node, XSAI pool)
+include mk/memory.mk
+
 deps:
 	./scripts/setup-tools.sh
 
@@ -86,9 +117,39 @@ init-force:
 llvm:
 	./scripts/build-llvm.sh
 
+gsim:
+	./scripts/install-gsim.sh
+
+nix-shell:
+	nix develop $(NIX_DEVSHELL)
+
+nix-init:
+	$(NIX_DEVELOP) make init-force
+
+nix-test:
+	$(NIX_DEVELOP) make test
+
+test-smoke:
+	./scripts/smoke-test.sh --mode manual
+
+smoke: test-smoke
+
+nix-smoke:
+	$(NIX_DEVELOP) ./scripts/smoke-test.sh --mode nix
+
 qemu:
-	cd $(QEMU_HOME) && mkdir -p build && cd build && ../configure --target-list=riscv64-softmmu,riscv64-linux-user \
-	--enable-debug --enable-zstd --enable-plugins && make -j && cd ../..
+	cd $(QEMU_HOME) && mkdir -p build && cd build && \
+	env \
+	  -u CROSS_COMPILE -u CC -u CXX -u AR -u AS -u LD -u NM -u OBJCOPY -u OBJDUMP -u RANLIB -u STRIP \
+	  NIX_HARDENING_ENABLE="$${NIX_HARDENING_ENABLE//fortify/}" \
+	  ../configure \
+	    --cc=$(QEMU_HOST_CC) \
+	    --host-cc=$(QEMU_HOST_CC) \
+	    --cross-prefix= \
+	    --target-list=riscv64-softmmu,riscv64-linux-user \
+	    --disable-sdl --disable-gtk --disable-opengl --disable-slirp \
+	    --enable-zstd --enable-plugins && \
+	$(MAKE) -j
 
 nemu:
 	$(MAKE) -C $(NEMU_HOME) riscv64-matrix-xs_defconfig
@@ -102,6 +163,8 @@ nemu-matrix-ref-so-docker:
 
 emu-verilator:
 	$(MAKE) -C $(NOOP_HOME) emu -j8 CONFIG=DefaultMatrixConfig WITH_CHISELDB=1 WITH_CONSTANTIN=0 EMU_THREADS=8 EMU_TRACE=fst
+
+xsai: emu-verilator
 
 emu-gsim:
 	$(MAKE) -C $(NOOP_HOME) gsim -j CONFIG=DefaultMatrixConfig EMU_TRACE="fst" GSIM=1
@@ -118,15 +181,39 @@ versions:
 
 test:
 	./scripts/env-test.sh
-firmware:
-	$(MAKE) -C firmware all
+# Build model passthrough flags (only override when user set non-default values)
+_LLAMA_EXTRA :=
+ifneq ($(LLAMA_MODEL_PRESET),stories15M)
+_LLAMA_EXTRA += MODEL_PRESET=$(LLAMA_MODEL_PRESET)
+endif
+ifneq ($(LLAMA_MODEL_KIND),)
+_LLAMA_EXTRA += MODEL_KIND=$(LLAMA_MODEL_KIND)
+endif
+ifneq ($(LLAMA_MODEL_NAME),)
+_LLAMA_EXTRA += MODEL_NAME=$(LLAMA_MODEL_NAME)
+endif
+ifneq ($(LLAMA_MODEL_PATH),)
+_LLAMA_EXTRA += MODEL_SOURCE_PATH=$(abspath $(LLAMA_MODEL_PATH))
+endif
+ifneq ($(LLAMA_MODEL_QUANTIZE),)
+_LLAMA_EXTRA += MODEL_QUANTIZE=$(LLAMA_MODEL_QUANTIZE)
+endif
 
-DIFF      ?= 0
+firmware:
+	$(MAKE) -C firmware all $(_LLAMA_EXTRA)
+
+ccdb:
+	$(CCDB_SCRIPT) --db "$(CCDB)" -- make $(CCDB_MAKE)
+
+ccdb-append:
+	$(CCDB_SCRIPT) --append --db "$(CCDB)" -- make $(CCDB_MAKE)
+
+DIFF      ?= 1
 LOG       ?= 0
 EMU_SCRIPT := ./scripts/run-emu.sh
 EMU_FLAGS   = $(if $(filter 1,$(LOG)),--log,) $(if $(filter 1,$(DIFF)),--diff,)
 
-run-emu: _ensure_emu
+run-emu: _ensure_payload _ensure_emu
 	$(EMU_SCRIPT) $(EMU_FLAGS) $(PAYLOAD)
 
 # RTL debug shortcut — captures both FST waveform and ChiselDB in one pass.
@@ -151,7 +238,7 @@ run-emu-debug: _ensure_emu
 	  --db --db-select "$(DB_SELECT)" \
 	  $(PAYLOAD)
 
-run-nemu: _ensure_nemu
+run-nemu: _ensure_payload _ensure_nemu
 	@case "$(PAYLOAD)" in \
 	  *.gz|*.zstd|*.zst) \
 	    test -f $(RESTORER) || $(MAKE) -C firmware build-gcpt-restore; \
@@ -166,7 +253,7 @@ run-nemu: _ensure_nemu
 run-user: _ensure_qemu_user
 	@$(QEMU_USER_BIN) -cpu $(QEMU_CPU_FLAGS) firmware/riscv-rootfs/rootfsimg/build/hello_xsai
 
-run-qemu: _ensure_qemu
+run-qemu: _ensure_payload _ensure_qemu
 	@echo "Running QEMU simulation..."
 	@case "$(PAYLOAD)" in \
 	  *.gz|*.zstd|*.zst) \
@@ -244,8 +331,19 @@ _ensure_qemu_user:
 _ensure_qemu_plugin:
 	@test -f $(PROFILING_PLUGIN) || $(MAKE) qemu
 
+_ensure_payload:
+	@case "$(PAYLOAD)" in \
+	  "$(GCPT_RESTORE_HOME)/build/gcpt.bin") \
+	    if [ ! -f "$(PAYLOAD)" ]; then \
+	      echo "[payload] gcpt.bin not found, building firmware..."; \
+	      $(MAKE) firmware; \
+	    fi ;; \
+	  *) \
+	    test -f "$(PAYLOAD)" || { echo "Payload not found: $(PAYLOAD)" >&2; exit 1; } ;; \
+	esac
+
 _ensure_firmware:
-	@test -f $(PAYLOAD) || $(MAKE) firmware
+	@$(MAKE) _ensure_payload
 
 profile: _ensure_qemu_plugin _ensure_firmware
 	$(CKPT_SCRIPT) profile $(CKPT_COMMON_FLAGS)

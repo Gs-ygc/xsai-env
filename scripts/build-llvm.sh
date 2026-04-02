@@ -1,45 +1,69 @@
-#!/bin/bash
-# 构建 RISC-V LLVM/Clang 交叉编译工具链的脚本
-# 在 x86 主机上构建，生成的 Clang 可以交叉编译 RISC-V 代码
+#!/usr/bin/env bash
 
-# 设置 RISC-V 交叉编译器路径（用于编译 compiler-rt 等运行时库）
-export RISCV_TOOLCHAIN_PREFIX=riscv64-linux-gnu-
-export RISCV=$XS_PROJECT_ROOT/local/llvm
-export PATH=$RISCV/bin:$PATH
-# 检查交叉编译器是否存在
-if ! command -v ${RISCV_TOOLCHAIN_PREFIX}gcc &> /dev/null; then
-    echo "错误: 找不到 RISC-V 交叉编译器 ${RISCV_TOOLCHAIN_PREFIX}gcc"
-    echo "请安装 RISC-V 交叉编译工具链:"
-    echo "  sudo apt-get install gcc-riscv64-linux-gnu g++-riscv64-linux-gnu"
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ---------------------------------------------------------------------------
+# Detect RISC-V cross compiler
+# Priority: 1) Nix RISCV env  2) RISCV_TOOLCHAIN_PREFIX  3) riscv64-linux-gnu-
+# ---------------------------------------------------------------------------
+if [[ -n "${RISCV:-}" && -x "$RISCV/bin/riscv64-unknown-linux-gnu-gcc" ]]; then
+  RISCV_TOOLCHAIN_PREFIX="$RISCV/bin/riscv64-unknown-linux-gnu-"
+  echo "Using RISC-V toolchain: $RISCV_TOOLCHAIN_PREFIX"
+elif [[ -n "${RISCV_TOOLCHAIN_PREFIX:-}" ]] && command -v "${RISCV_TOOLCHAIN_PREFIX}gcc" >/dev/null 2>&1; then
+  echo "Using RISCV_TOOLCHAIN_PREFIX: $RISCV_TOOLCHAIN_PREFIX"
+else
+  RISCV_TOOLCHAIN_PREFIX="riscv64-linux-gnu-"
+  if ! command -v "${RISCV_TOOLCHAIN_PREFIX}gcc" >/dev/null 2>&1; then
+    echo "Error: RISC-V cross compiler not found." >&2
+    echo "  Install: sudo apt install gcc-riscv64-linux-gnu g++-riscv64-linux-gnu" >&2
+    echo "  Or set: export RISCV=<toolchain-prefix>" >&2
     exit 1
+  fi
 fi
 
-# 设置 RISCV 环境变量（如果未设置）
-if [ -z "$RISCV" ]; then
-    export RISCV=$(pwd)/install
-    echo "设置 RISCV=$RISCV"
-fi
-mkdir -p $RISCV
-cd $XS_PROJECT_ROOT/llvm-project-ame
-# 创建构建目录
-mkdir -p build && cd build
+INSTALL_PREFIX="${LLVM_HOME:-$ROOT/local/llvm}"
+mkdir -p "$INSTALL_PREFIX"
+export PATH="$INSTALL_PREFIX/bin:$PATH"
 
-# 配置 cmake
-# 注意：
-# - LLVM/Clang 本身用主机编译器（x86）编译（默认，不指定 CMAKE_C_COMPILER）
-# - compiler-rt 等运行时库用 RISC-V 交叉编译器编译
-# - LLVM 的构建系统会自动检测并使用交叉编译器来编译目标架构的运行时库
-cmake -DCMAKE_INSTALL_PREFIX=$RISCV \
+# Use ninja if available (much faster for LLVM)
+if command -v ninja >/dev/null 2>&1; then
+  BUILD_CMD="ninja"
+  INSTALL_CMD="ninja install"
+  GEN_FLAGS=("-GNinja")
+else
+  BUILD_CMD="make -j$(nproc)"
+  INSTALL_CMD="make install"
+  GEN_FLAGS=()
+fi
+
+cd "$ROOT/llvm-project-ame"
+
+# Clean stale build dir if the generator changed (e.g. Ninja <-> Unix Makefiles)
+if [[ -f build/CMakeCache.txt ]]; then
+  CACHED_GENERATOR=$(grep -s "^CMAKE_GENERATOR:INTERNAL=" build/CMakeCache.txt | cut -d= -f2 || true)
+  if command -v ninja >/dev/null 2>&1 && [[ "$CACHED_GENERATOR" != "Ninja" ]]; then
+    echo "Cleaning stale build dir (generator changed to Ninja)"
+    rm -rf build
+  elif ! command -v ninja >/dev/null 2>&1 && [[ "$CACHED_GENERATOR" == "Ninja" ]]; then
+    echo "Cleaning stale build dir (generator changed to Unix Makefiles)"
+    rm -rf build
+  fi
+fi
+mkdir -p build
+cd build
+
+cmake -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_ENABLE_THREADS=ON \
   -DLLVM_OPTIMIZED_TABLEGEN=On \
   -DLLVM_ENABLE_PROJECTS="clang;lld;clang-tools-extra" \
   -DLLVM_LINK_LLVM_DYLIB=On \
   -DLLVM_DEFAULT_TARGET_TRIPLE="riscv64-unknown-linux-gnu" \
-  -DLLVM_TARGETS_TO_BUILD="RISCV" \
+  -DLLVM_TARGETS_TO_BUILD="RISCV;X86" \
+  "${GEN_FLAGS[@]}" \
   ../llvm
 
-# 构建
-# 如果需要 builtins 库，可以先构建 builtins，然后再构建其他库
-# 但通常不需要，因为系统库已经提供了这些函数
-make -j$(nproc) && make install
-
+$BUILD_CMD
+$INSTALL_CMD

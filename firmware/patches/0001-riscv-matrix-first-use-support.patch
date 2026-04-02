@@ -1,8 +1,14 @@
 --- a/arch/riscv/include/asm/csr.h
 +++ b/arch/riscv/include/asm/csr.h
-@@ -30,6 +30,12 @@
+@@ -30,12 +30,18 @@
  #define SR_VS_CLEAN	_AC(0x00000400, UL)
  #define SR_VS_DIRTY	_AC(0x00000600, UL)
+ 
+ #define SR_VS_THEAD		_AC(0x01800000, UL) /* xtheadvector Status */
+ #define SR_VS_OFF_THEAD		_AC(0x00000000, UL)
+ #define SR_VS_INITIAL_THEAD	_AC(0x00800000, UL)
+ #define SR_VS_CLEAN_THEAD	_AC(0x01000000, UL)
+ #define SR_VS_DIRTY_THEAD	_AC(0x01800000, UL)
  
 +#define SR_MS		_AC(0x06000000, UL) /* Matrix Status */
 +#define SR_MS_OFF	_AC(0x00000000, UL)
@@ -125,16 +131,15 @@
 +#include <asm/matrix.h>
  #include <asm/vector.h>
  #include <asm/cpufeature.h>
- 
-@@ -171,6 +172,8 @@
+ #include <asm/exec.h>
+@@ -171,5 +172,7 @@
  	memset(&current->thread.vstate, 0, sizeof(struct __riscv_v_ext_state));
  	clear_tsk_thread_flag(current, TIF_RISCV_V_DEFER_RESTORE);
  #endif
 +	/* Reset matrix state for userspace first-use flow. */
 +	riscv_m_vstate_off(task_pt_regs(current));
- }
- 
- void arch_release_task_struct(struct task_struct *tsk)
+ #ifdef CONFIG_RISCV_ISA_SUPM
+ 	if (riscv_has_extension_unlikely(RISCV_ISA_EXT_SUPM))
 @@ -214,6 +217,8 @@
  		*childregs = *(current_pt_regs());
  		/* Turn off status.VS */
@@ -154,12 +159,15 @@
  #include <asm/vector.h>
  #include <asm/irq_stack.h>
  
-@@ -177,6 +178,8 @@
+@@ -177,8 +178,10 @@
  		local_irq_enable();
  
  		handled = riscv_v_first_use_handler(regs);
 +		if (!handled)
 +			handled = riscv_m_first_use_handler(regs);
+ 		if (!handled)
+ 			do_trap_error(regs, SIGILL, ILL_ILLOPC, regs->epc,
+ 				      "Oops - illegal instruction");
  
  		local_irq_disable();
  
