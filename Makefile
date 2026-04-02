@@ -1,4 +1,4 @@
-.PHONY: help deps init init-force llvm update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform _ensure_qemu _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
+.PHONY: help deps init init-force llvm update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform _ensure_qemu _ensure_qemu_user _ensure_qemu_plugin _ensure_firmware docker-nemu-image nemu-matrix-ref-so-docker
 
 GIT_FORCE_INIT ?= 1
 
@@ -37,6 +37,10 @@ MEMORY        ?= 4G
 SMP           ?= 1
 # Pass extra args straight to checkpoint.sh, e.g. CKPT_ARGS="--config my-run"
 CKPT_ARGS     ?=
+QEMU_BUILD_DIR := $(QEMU_HOME)/build
+QEMU_SYSTEM_BIN := $(QEMU_BUILD_DIR)/qemu-system-riscv64
+QEMU_USER_BIN := $(QEMU_BUILD_DIR)/qemu-riscv64
+PROFILING_PLUGIN := $(QEMU_BUILD_DIR)/contrib/plugins/libprofiling.so
 
 help:
 	@echo "XSAI Environment Manager"
@@ -81,7 +85,7 @@ llvm:
 	./scripts/build-llvm.sh
 
 qemu:
-	cd qemu && mkdir -p build && cd build && ../configure --target-list=riscv64-softmmu,riscv64-linux-user \
+	cd $(QEMU_HOME) && mkdir -p build && cd build && ../configure --target-list=riscv64-softmmu,riscv64-linux-user \
 	--enable-debug --enable-zstd --enable-plugins && make -j && cd ../..
 
 nemu:
@@ -158,20 +162,20 @@ run-nemu: _ensure_nemu
 # export QEMU_LD_PREFIX=sysroot_path
 # Setting QEMU_LD_PREFIX is necessary to avoid "Could not open '/lib/ld-linux-riscv64-lp64d.so.1': No such file or directory"
 # The sysroot_path should be set to your compiler's sysroot path, for example: QEMU_LD_PREFIX=/opt/riscv/sysroot
-run-user:
-	@$(QEMU_HOME)/build/qemu-riscv64 -cpu $(QEMU_CPU_FLAGS) firmware/riscv-rootfs/rootfsimg/build/hello_xsai
+run-user: _ensure_qemu_user
+	@$(QEMU_USER_BIN) -cpu $(QEMU_CPU_FLAGS) firmware/riscv-rootfs/rootfsimg/build/hello_xsai
 
 run-qemu: _ensure_qemu
 	@echo "Running QEMU simulation..."
 	@case "$(PAYLOAD)" in \
 	  *.gz|*.zstd|*.zst) \
-	    $(QEMU_HOME)/build/qemu-system-riscv64 \
+	    $(QEMU_SYSTEM_BIN) \
 	      -M nemu,checkpoint=$(PAYLOAD),gcpt-restore=$(RESTORER) \
 	      -nographic -m $(MEMORY) -smp $(SMP) \
 	      -serial mon:stdio \
 	      -cpu $(QEMU_CPU_FLAGS) ;; \
 	  *) \
-	    $(QEMU_HOME)/build/qemu-system-riscv64 \
+	    $(QEMU_SYSTEM_BIN) \
 	      -bios $(PAYLOAD) \
 	      -nographic -m $(MEMORY) -smp $(SMP) \
 	      -serial mon:stdio \
@@ -205,7 +209,6 @@ $(SIMPOINT_BIN):
 #   WORKLOAD_NAME CHECKPOINT_CONFIG CPT_INTERVAL PROFILING_INTERVALS
 #   SIMPOINT_MAX_K MEMORY SMP MODEL_IMG CKPT_ARGS
 # ---------------------------------------------------------------------------
-PROFILING_PLUGIN := $(QEMU_HOME)/build/contrib/plugins/libprofiling.so
 CKPT_SCRIPT := CPU_FLAGS='$(QEMU_CPU_FLAGS)' ./scripts/checkpoint.sh
 # RESUME_CHECKPOINT: optional path to an existing checkpoint to warm-start profiling
 # Leave empty (default) for a cold-start profiling run.
@@ -231,23 +234,29 @@ _ensure_nemu:
 	@test -f $(NEMU_HOME)/build/riscv64-nemu-interpreter || $(MAKE) nemu
 
 _ensure_qemu:
+	@test -f $(QEMU_SYSTEM_BIN) || $(MAKE) qemu
+
+_ensure_qemu_user:
+	@test -f $(QEMU_USER_BIN) || $(MAKE) qemu
+
+_ensure_qemu_plugin:
 	@test -f $(PROFILING_PLUGIN) || $(MAKE) qemu
 
 _ensure_firmware:
 	@test -f $(PAYLOAD) || $(MAKE) firmware
 
-profile: _ensure_qemu _ensure_firmware
+profile: _ensure_qemu_plugin _ensure_firmware
 	$(CKPT_SCRIPT) profile $(CKPT_COMMON_FLAGS)
 
 cluster: $(SIMPOINT_BIN)
 	$(CKPT_SCRIPT) cluster $(CKPT_COMMON_FLAGS)
 
 PHASE ?= all
-ckpt: $(SIMPOINT_BIN) _ensure_qemu _ensure_firmware
+ckpt: $(SIMPOINT_BIN) _ensure_qemu_plugin _ensure_firmware
 	$(CKPT_SCRIPT) $(PHASE) $(CKPT_COMMON_FLAGS)
 
 # Dump every N instructions across the whole execution, no SimPoint needed
-uniform: _ensure_qemu _ensure_firmware
+uniform: _ensure_qemu_plugin _ensure_firmware
 	$(CKPT_SCRIPT) uniform $(CKPT_COMMON_FLAGS)
 
 
@@ -259,4 +268,4 @@ distclean:
 	$(MAKE) -C $(NEMU_HOME) distclean
 	$(MAKE) -C firmware distclean
 	@rm -rf local/llvm
-	@[ -d qemu/build ] && $(MAKE) -C qemu/build distclean || true
+	@[ -d $(QEMU_BUILD_DIR) ] && $(MAKE) -C $(QEMU_BUILD_DIR) distclean || true
