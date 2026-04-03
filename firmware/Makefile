@@ -275,6 +275,10 @@ build-dtb-xsai: setup-submodules
 #   fdt_addr = round_up(image_size + 0x800000, 0x100000) + 0x80000000
 build-opensbi:
 	@echo "Building OpenSBI firmware..."
+	@if [ ! -f "$(OPENSBI)/Makefile" ]; then \
+		echo "Initializing opensbi submodule with checkout mode..."; \
+		git -c submodule.firmware/opensbi.update=checkout submodule update --init --checkout opensbi; \
+	fi
 	@mkdir -p $(FIRMWARE_LOG_DIR)
 	@FW_SIZE=$$(stat -c%s $(LINUX_IMAGE)) && \
 	 FW_FDT_ADDR=$$(python3 -c \
