@@ -27,6 +27,7 @@ PAYLOAD := $(GCPT_RESTORE_HOME)/build/gcpt.bin
 QEMU_CPU_FLAGS ?= rv64,v=true,vlen=128,h=true,sstc=true,svpbmt=true,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false
 
 QEMU_CPU_FLAGS := rv64,v=true,vlen=128,h=false,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=false,sv57=false,sv64=false
+QEMU_USER_FLAGS := rv64,v=true,vlen=128,h=false,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32
 SIMPOINT_RESULT_ROOT := $(XS_PROJECT_ROOT)/firmware/simpoints
 CHECKPOINT_RESULT_ROOT := $(XS_PROJECT_ROOT)/firmware/checkpoints
 CHECKPOINT_CONFIG := build
@@ -250,7 +251,7 @@ run-nemu: _ensure_payload _ensure_nemu
 # Setting QEMU_LD_PREFIX is necessary to avoid "Could not open '/lib/ld-linux-riscv64-lp64d.so.1': No such file or directory"
 # The sysroot_path should be set to your compiler's sysroot path, for example: QEMU_LD_PREFIX=/opt/riscv/sysroot
 run-user:
-	@$(QEMU_HOME)/build/qemu-riscv64 -cpu $(QEMU_CPU_FLAGS) firmware/riscv-rootfs/rootfsimg/build/hello_xsai
+	@$(QEMU_HOME)/build/qemu-riscv64 -cpu $(QEMU_USER_FLAGS) $(RISCV_ROOTFS_HOME)/apps/llama.cpp/build-riscv/bin/llama-bench -m /nfs/home/share/leguochun/model/stories15M-q8_0.gguf -h
 
 run-qemu: _ensure_payload _ensure_qemu _ensure_model_img
 	@echo "Running QEMU simulation..."
