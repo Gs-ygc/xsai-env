@@ -53,4 +53,8 @@
 [submodule "firmware/gcpt_restore"]
 	path = firmware/gcpt_restore
 	url = https://github.com/OpenXiangShan/LibCheckpointAlpha.git
+	branch = main
+[submodule "docs/CUTE-Design-Doc"]
+	path = docs/CUTE-Design-Doc
+	url = https://github.com/OpenCUTE/CUTE-Design-Doc.git
 	branch = master
