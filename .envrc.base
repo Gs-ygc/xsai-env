@@ -1,5 +1,5 @@
 # Base environment shared by direnv-managed shells.
-# `.envrc` is responsible for enabling the richer Nix devshell first.
+# `.envrc` may layer additional helpers on top, but this file is the common base.
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd)/scripts/env-common.sh"
 xsai_env_init

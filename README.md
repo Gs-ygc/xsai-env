@@ -1,186 +1,198 @@
-# XSAI Development Environment
+# XSAI Environment
 
-This repository provides an out-of-the-box development environment for XSAI (XiangShan AI), including simulation, firmware, custom LLVM toolchain, and AME (Advanced Matrix Extension) support.
+`xsai-env` is an integration workspace for XSAI (XiangShan AI). It pulls together RTL, simulators, firmware, rootfs, toolchains, and validation flows behind a single top-level `Makefile`.
 
-## Quick Start
+Treat the repo root as the default entrypoint. Most day-to-day setup, build, and run commands should start here instead of inside individual submodules.
 
-Troubleshooting notes for common build/runtime issues live under `docs/`.
-See `docs/troubleshooting.md` for mixed Nix/non-Nix rootfs artifacts and similar environment-specific failures.
+For a subsystem-by-subsystem ownership and dependency map, see `docs/workstreams.md`.
 
-### 1. Setup
+## What This Repo Contains
 
-Clone the repository and initialize the environment. This only needs to be done once.
+- XSAI RTL and its nested submodules
+- NEMU and QEMU based simulation flows
+- Linux, OpenSBI, GCPT restore, and rootfs firmware flows
+- AM tests and userspace workloads
+- A custom LLVM/Clang build path for AME work
+- Top-level environment, smoke-test, issue-reporting, and automation scripts
+
+## Recommended Setup
+
+The default workflow is the shared shell environment, not Nix.
+
+### 1. Clone and initialize
 
 ```bash
 git clone https://github.com/OurCompArchGroup/xsai-env
 cd xsai-env
-make nix-init         # Recommended: reproducible bootstrap inside the Nix devshell
 
-# Or, if you prefer the non-Nix Ubuntu/Debian path:
-sudo make deps        # Install system dependencies
-make init-force       # Initialize submodules
+# Optional on fresh Ubuntu/Debian hosts:
+# sudo make deps
+
+make init-force
 ```
 
-### 2. Choose an environment entrypoint
+`make init-force` initializes the main submodules, runs the nested XSAI and firmware setup steps, and may take a while on a fresh checkout.
 
-Use one of the following workflows before building.
+### 2. Load the environment
+
+Use one of these entrypoints before building:
 
 ```bash
-# Option A (recommended): direnv + Nix devshell
-# Requires: nix + direnv
-# When you cd into the repo, `.envrc` will:
-#   - enter the flake devshell
-#   - load shared env vars
-#   - apply `.envrc.local` overrides if present
-#   - show submodule freshness hints
-direnv allow
-
-# Option B: plain Nix without direnv
-nix develop .#default
-
-# Option C: lightweight fallback for CI / non-direnv users
-# This only sets core environment variables.
+# Recommended default for manual shells and CI
 source env.sh
 ```
 
-Key variables set by `.envrc` / `env.sh`:
+```bash
+# Optional convenience if you already use direnv
+direnv allow
+```
 
-| Variable | Value |
+Notes:
+
+- `env.sh` is the baseline workflow and shares the same environment logic as `.envrc.base`.
+- `.envrc` adds shared env loading, optional `.envrc.local` overrides, and submodule freshness hints.
+- `.envrc` does not currently auto-enter the Nix devshell.
+- If `direnv` is not installed yet, follow the official installation guide: <https://direnv.net/docs/installation.html>
+- `direnv` also needs to be hooked into your shell before `direnv allow` will work correctly. The official setup guide is here: <https://direnv.net/docs/hook.html>
+- For Bash, the usual setup step is adding `eval "$(direnv hook bash)"` to `~/.bashrc`, then restarting the shell.
+- If you need machine-local overrides such as a custom `RISCV` or `LLVM_HOME`, copy `.envrc.local.example` to `.envrc.local` and edit it there.
+
+### 3. Smoke-check the top-level wiring
+
+```bash
+make test-smoke
+```
+
+This is the fastest top-level validation path. It checks the environment scripts and exported Make targets without kicking off a full rebuild.
+
+## Optional Nix Workflow
+
+Nix entrypoints are still available for reproducibility work or Nix-specific debugging, but they are no longer the default or recommended setup path for this repository.
+
+```bash
+make nix-shell
+make nix-init
+make nix-smoke
+make nix-test
+```
+
+## Environment Variables
+
+`env.sh` and `.envrc.base` both use `scripts/env-common.sh` to populate the shared environment.
+
+| Variable | Meaning |
 |---|---|
 | `XS_PROJECT_ROOT` | repo root |
 | `NEMU_HOME` | `./NEMU` |
+| `QEMU_HOME` | `./qemu` |
 | `AM_HOME` | `./nexus-am` |
 | `NOOP_HOME` | `./XSAI` |
-| `LLVM_HOME` | `./local/llvm` |
+| `LLVM_HOME` | `./local/llvm` by default |
+| `RISCV_LINUX_HOME` | `./firmware/riscv-linux` |
 | `RISCV_ROOTFS_HOME` | `./firmware/riscv-rootfs` |
-| `RISCV` | resolved from Nix shell, explicit env, `/opt/riscv`, or compiler on `PATH` |
-| `CROSS_COMPILE` | not set globally; firmware/software flows provide their own cross toolchain prefix |
+| `RISCV` | resolved from explicit env, known shared installs, `/opt/riscv`, or a compiler on `PATH` |
+| `RISCV_SYSROOT` | resolved from the selected toolchain when available |
+| `QEMU_LD_PREFIX` | defaults to the detected RISC-V sysroot when available |
+| `CROSS_COMPILE` | intentionally not exported at the top level; firmware/software flows set their own toolchain prefix |
 
-## Build Targets
+## Common Targets
 
-All targets are available via `make <target>` from the repo root.
+All targets are available as `make <target>` from the repo root.
 
-### Toolchain
-
-```bash
-make llvm            # Build custom LLVM/Clang with AME support → local/llvm
-make gsim            # Install the latest gsim release → local/bin/gsim
-make nix-shell       # Enter the reproducible Nix devshell
-make nix-init        # Run make init-force inside the Nix devshell
-make nix-test        # Run make test inside the Nix devshell
-make test-smoke      # Fast static / dry-run smoke checks
-make nix-smoke       # Run smoke checks inside the Nix devshell
-```
-
-To install the latest [gsim](https://github.com/OpenXiangShan/gsim) simulator binary:
+### Setup and checks
 
 ```bash
-bash scripts/install-gsim.sh   # installs to local/bin/gsim
+make deps            # Install Ubuntu/Debian host dependencies (requires sudo)
+make init-force      # Initialize submodules and nested setup flows
+make test-smoke      # Fast smoke check for scripts and top-level targets
+make test            # Heavier manual-environment sanity test
 ```
 
-### Simulation
+### Toolchains and simulators
 
 ```bash
-make nemu            # Build NEMU (RISC-V instruction set simulator)
-make emu-verilator   # Build Verilator RTL simulation (XSAI)
-make emu-gsim        # Build gsim-based RTL simulation (XSAI)
-make qemu            # Build QEMU (riscv64-softmmu + riscv64-linux-user)
-# QEMU depends on glib-2.0 / pixman / libslirp in the active environment
-# The default repo build disables SDL/GTK/OpenGL because the common workflows use `-nographic`
-# It also disables libslirp because the default XiangShan/QEMU flow does not use user-mode networking
-# In the Nix devshell, the Makefile also disables fortify for QEMU debug builds to avoid `_FORTIFY_SOURCE` vs `-O0` conflicts
-make xsai            # Alias for emu-verilator
+make llvm            # Build custom LLVM/Clang with AME support -> local/llvm
+make nemu            # Build NEMU
+make qemu            # Build qemu-system-riscv64 and qemu-riscv64
+make xsai            # Build XSAI Verilator simulation
+make emu-gsim        # Build the gsim-based XSAI simulation path
+make gsim            # Download the latest gsim release -> local/bin/gsim
 ```
 
-### Firmware
+Notes:
+
+- `make gsim` fetches the latest upstream release and is therefore not a deterministic bootstrap step.
+- The top-level QEMU build intentionally clears host-side cross-compilation variables before running `configure`.
+
+### Firmware and end-to-end runs
 
 ```bash
-make firmware        # Build all firmware:
-                     #   Linux kernel (linux-6.18)
-                     #   Root filesystem (riscv-rootfs)
-                     #   OpenSBI payload
-                     #   Device tree blob (DTB)
-                     #   GCPT checkpoint binary
+make firmware        # Build rootfs, Linux, DTB, QEMU/NEMU GCPT payloads, and restore-only GCPT
+make run-qemu        # Boot the default QEMU flow with the GCPT payload
+make run-nemu        # Run the GCPT payload on NEMU
+make test-matrix     # Build and run the AME matrix simple test
 ```
 
-### Running
+Notes:
+
+- `make run-qemu` is the main end-to-end validation path for this repo.
+- `MODEL_IMG=/path/to/disk.img make run-qemu` attaches a virtio block device.
+- `make run-qemu` and `make run-nemu` auto-build missing payload pieces such as QEMU, DTB, or GCPT binaries when needed.
+- `make run-user` exists, but it is currently a local `llama.cpp` convenience target with a hard-coded model path and should not be treated as a general validation entrypoint.
+
+### Analysis and maintenance
 
 ```bash
-make run-nemu        # Run NEMU with GCPT payload (bare-metal boot)
-make run-qemu        # Run QEMU system simulation with GCPT payload
-make run-user        # Run hello_xsai directly via qemu-riscv64 (user mode)
-make test-matrix     # Run matrix test via NEMU
-make test            # Run heavy environment sanity check
-make test-smoke      # Run fast smoke checks without heavy builds
+make simpoint                          # Build the SimPoint clustering binary
+make ckpt MODEL_IMG=/path/to/disk.img  # Run the checkpoint flow
+make ccdb                             # Rebuild local/compile_commands.json via bear
+make versions                         # Refresh VERSIONS from submodule state
+make update                           # Update submodules
+make clean                            # Clean main build artifacts
+make distclean                        # Deep clean, including local LLVM and QEMU build output
 ```
 
-### Maintenance
+## Repository Layout
 
-```bash
-make update          # Update all submodules to latest
-make clean           # Remove build artifacts and local/llvm
-sudo make deps       # Re-install system dependencies
+```text
+.
+├── Makefile               # Top-level orchestration entrypoint
+├── scripts/               # Setup, environment, smoke-test, reporting, and helper scripts
+├── docs/                  # Troubleshooting and workflow notes
+├── firmware/
+│   ├── linux-6.18/        # Pinned Linux kernel source
+│   ├── riscv-linux -> linux-6.18
+│   ├── riscv-rootfs/      # Rootfs, initramfs, and userspace apps
+│   ├── opensbi/           # OpenSBI source and build output
+│   ├── nemu_board/        # DTS generation and board configs
+│   ├── gcpt_restore/      # GCPT boot/restore binaries
+│   ├── LibCheckpoint/     # Checkpoint library
+│   └── checkpoints/       # Generated checkpoint outputs
+├── XSAI/                  # XiangShan AI RTL source
+├── NEMU/                  # NEMU source
+├── qemu/                  # QEMU source
+├── nexus-am/              # AM layer, tests, and apps
+├── llvm-project-ame/      # LLVM/Clang source with AME support
+├── DRAMsim3/              # DRAM simulator
+├── NutShell/              # Reference processor used by some validation flows
+├── riscv-matrix-spec/     # Matrix extension specification
+├── local/                 # Local tools and generated binaries
+├── log/                   # Build and runtime logs
+├── .envrc                 # direnv entrypoint
+├── env.sh                 # Manual environment entrypoint
+└── flake.nix              # Optional Nix environment definition
 ```
+
+Generated artifacts commonly live under `local/`, `build/`, `log/`, and `firmware/checkpoints/`.
 
 ## Troubleshooting
 
-- See `docs/troubleshooting.md` for common failure logs, root causes, and recovery steps.
-- If you switch between Nix and non-Nix builds, clean `firmware/riscv-rootfs` app artifacts before rebuilding firmware.
+- Start with `docs/troubleshooting.md` for common build and runtime failures.
+- If you switch between environment styles, stale rootfs artifacts are a common source of confusing failures.
+- `make clean` is the first cleanup step; use `make distclean` when you intentionally want a deeper reset.
 
 ## Issue Reporting
 
-- GitHub issue forms live under `.github/ISSUE_TEMPLATE/` and are tailored for xsai-env integration issues.
-- The issue template structure and bug-report flow were adapted for xsai-env from the XiangShan project and then rewritten for this repository's scope.
-- Use `bash scripts/bug-report.sh` to generate an environment and repository bundle before filing a bug or build/runtime problem.
-- Use `bash scripts/create-issue.sh` for a terminal-first flow that prompts for the required fields and submits the issue with `gh issue create`.
-- If the root cause is clearly inside an upstream component repository such as XSAI, NEMU, or riscv-rootfs, file the issue upstream as well and link it from the xsai-env issue when integration context matters.
-
-## Directory Structure
-
-```
-.
-├── NEMU/                  # RISC-V Instruction Set Simulator
-├── XSAI/                  # XiangShan AI RTL source (Chisel)
-├── llvm-project-ame/      # LLVM/Clang source with AME extension support
-├── nexus-am/              # Abstract Machine layer and test applications
-├── qemu/                  # QEMU source (riscv64 target)
-├── DRAMsim3/              # DRAM simulator (used by NEMU)
-├── NutShell/              # NutShell reference processor
-├── riscv-matrix-spec/     # RISC-V Matrix extension specification
-├── firmware/
-│   ├── linux-6.18/        # Linux kernel source
-│   ├── riscv-rootfs/      # Root filesystem & userspace apps (hello_xsai, etc.)
-│   ├── opensbi/           # OpenSBI firmware
-│   ├── nemu_board/        # Board configs, DTS generator
-│   ├── LibCheckpoint/     # GCPT checkpoint library
-│   └── checkpoints/       # Simpoint checkpoint outputs
-├── docs/                  # Troubleshooting and workflow notes
-├── local/
-│   ├── llvm/              # Built LLVM toolchain (generated)
-│   └── bin/               # Installed binaries (gsim, etc.)
-├── scripts/               # Build & setup helper scripts
-│   ├── setup.sh           # Submodule initialization
-│   ├── setup-tools.sh     # System dependency installation
-│   ├── build-llvm.sh      # LLVM build script
-│   ├── bug-report.sh      # Issue report bundle generator
-│   ├── create-issue.sh    # Terminal-first GitHub issue submission helper
-│   ├── install-gsim.sh    # gsim auto-installer (latest GitHub release)
-│   ├── install-verilator.sh
-│   └── update-submodule.sh
-├── .envrc                 # direnv environment variables
-├── env.sh                 # Manual environment setup
-├── Makefile               # Top-level build orchestration
-└── flake.nix              # Nix flake for reproducible environment
-```
-
-## Firmware: hello_xsai
-
-The main AME test application lives in `firmware/riscv-rootfs/apps/hello_xsai/`. It validates the AME GEMM kernel using a custom memory allocator and fuzzing tests.
-
-```bash
-cd firmware/riscv-rootfs/apps/hello_xsai
-make          # build
-make disasm-ame  # disassemble AME kernel object
-```
-
-The custom allocator (`mem.c`) uses `mmap` of physical address `0x100000000` (6 GB, matching the DTS `direct-map-mem` region) when `/dev/mem` is available, and falls back to anonymous `mmap` otherwise.
+- `bash scripts/bug-report.sh` generates an environment and repository bundle for bug reports.
+- `bash scripts/create-issue.sh` provides a terminal-first issue workflow using GitHub CLI.
+- If the root cause clearly belongs to an upstream component such as `XSAI`, `NEMU`, `qemu`, or `riscv-rootfs`, file the issue upstream as well and link the integration context from `xsai-env`.

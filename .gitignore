@@ -2,7 +2,8 @@ out/
 .direnv/
 .envrc.local
 .vscode/
-software/
+software/*
+!software/README.md
 local/
 *.cache/*
 *.metals
