@@ -12,8 +12,8 @@
 	branch = master
 [submodule "NEMU"]
 	path = NEMU
-	url = https://github.com/yu-yake2002/NEMU-Matrix.git
-	branch = master
+	url = https://github.com/OpenXiangShan/NEMU.git
+	branch = feat-matrix
 [submodule "NutShell"]
 	path = NutShell
 	url = https://github.com/OSCPU/NutShell
