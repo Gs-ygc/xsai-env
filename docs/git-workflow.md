@@ -146,6 +146,27 @@ The root bump PR should include:
 - whether `make versions` changed `VERSIONS`
 - validation run from the root workflow
 
+### Rootfs Issue-Disabled Flow
+
+`firmware/riscv-rootfs` is currently allowed to use a root-tracked
+integration issue when its owning repository cannot accept issues.
+
+For this exception:
+
+1. Commit and push the rootfs change to the `riscv-rootfs` remote first.
+2. Open an `xsai-env` issue with the matching template prefix, such as
+   `[Feature Request] ...` or `[Problem] ...`.
+3. State that the root cause or requested code change lives in
+   `firmware/riscv-rootfs`, and that the rootfs repository cannot currently
+   accept issues.
+4. Include the rootfs branch, pushed commit SHA, and any rootfs PR link if one
+   exists.
+5. Update the `firmware/riscv-rootfs` gitlink in `xsai-env`, run
+   `make versions`, and include `VERSIONS` in the parent commit.
+
+This exception does not allow local-only gitlinks. The rootfs commit still must
+be pushed and fetchable before the parent PR is opened.
+
 ### Nested Submodules
 
 For nested submodules, submit from the inside out.

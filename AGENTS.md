@@ -37,6 +37,7 @@
 - Use `.agents/skills/xsai-issue-pr-flow` when opening issues, choosing issue templates, writing issue titles/bodies, creating branches from issues, or preparing PRs.
 - For submodule work, commit and merge the submodule change first, then update the parent gitlink in `xsai-env`; nested submodules must be updated from the inside out.
 - Use `.agents/skills/xsai-submodule-git-flow` when modifying submodules or gitlinks; run `make versions` for intentional root-level submodule bumps and include `VERSIONS` in the same parent commit.
+- `firmware/riscv-rootfs` may use an `xsai-env` integration issue while rootfs issues are unavailable, but the rootfs commit must be pushed and fetchable before the parent gitlink bump PR is opened.
 
 ## Workstream Boundaries
 
