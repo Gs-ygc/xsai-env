@@ -196,3 +196,10 @@ Generated artifacts commonly live under `local/`, `build/`, `log/`, and `firmwar
 - `bash scripts/bug-report.sh` generates an environment and repository bundle for bug reports.
 - `bash scripts/create-issue.sh` provides a terminal-first issue workflow using GitHub CLI.
 - If the root cause clearly belongs to an upstream component such as `XSAI`, `NEMU`, `qemu`, or `riscv-rootfs`, file the issue upstream as well and link the integration context from `xsai-env`.
+
+## Development Workflow
+
+- Use `docs/git-workflow.md` for the issue-first Git flow, branch naming, PR review, and merge rules.
+- Open or link an issue before non-trivial work, then create a scoped branch such as `fix/123-checkpoint-replay` or `feat/123-rootfs-app`.
+- PRs should link the issue, summarize the touched workstream, list validation commands, and call out coupled-subsystem risk.
+- Submodule code changes should land in the owning submodule repository first; `xsai-env` then carries a separate gitlink bump PR that also runs `make versions` and includes the resulting `VERSIONS` update.
