@@ -18,6 +18,28 @@ xsai_env_prepend_path() {
   esac
 }
 
+xsai_env_source_local_overrides() {
+  local root="$1"
+  local added_path_add=0
+
+  [[ "${XSAI_ENV_LOAD_LOCAL:-1}" == "1" ]] || return 0
+  [[ -f "$root/.envrc.local" ]] || return 0
+
+  if ! declare -F PATH_add >/dev/null 2>&1; then
+    PATH_add() {
+      xsai_env_prepend_path "$1"
+    }
+    added_path_add=1
+  fi
+
+  # shellcheck source=/dev/null
+  source "$root/.envrc.local"
+
+  if [[ "$added_path_add" == "1" ]]; then
+    unset -f PATH_add
+  fi
+}
+
 xsai_env_detect_riscv_root() {
   local resolver
   resolver="$(xsai_env_resolver)"
@@ -64,6 +86,8 @@ xsai_env_detect_riscv_sysroot() {
 
 xsai_env_init() {
   export XS_PROJECT_ROOT="${XS_PROJECT_ROOT:-$(_xsai_env_root)}"
+  xsai_env_source_local_overrides "$XS_PROJECT_ROOT"
+
   export NEMU_HOME="${NEMU_HOME:-$XS_PROJECT_ROOT/NEMU}"
   export QEMU_HOME="${QEMU_HOME:-$XS_PROJECT_ROOT/qemu}"
   export AM_HOME="${AM_HOME:-$XS_PROJECT_ROOT/nexus-am}"
