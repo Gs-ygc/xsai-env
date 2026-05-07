@@ -33,6 +33,10 @@
 - When documenting workflows, call out local-only helpers such as `make run-user` instead of presenting them as portable validation targets.
 - Point users to `docs/troubleshooting.md`, `scripts/bug-report.sh`, and `scripts/create-issue.sh` when reporting build or runtime issues.
 - Favor deterministic inputs over `latest` downloads unless explicitly requested.
+- Follow `docs/git-workflow.md` for issue-first development, branch naming, PR descriptions, review expectations, and merge rules.
+- Use `.agents/skills/xsai-issue-pr-flow` when opening issues, choosing issue templates, writing issue titles/bodies, creating branches from issues, or preparing PRs.
+- For submodule work, commit and merge the submodule change first, then update the parent gitlink in `xsai-env`; nested submodules must be updated from the inside out.
+- Use `.agents/skills/xsai-submodule-git-flow` when modifying submodules or gitlinks; run `make versions` for intentional root-level submodule bumps and include `VERSIONS` in the same parent commit.
 
 ## Workstream Boundaries
 
