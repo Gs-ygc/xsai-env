@@ -61,14 +61,50 @@ FIRMWARE_LOG_DIR ?= $(XS_PROJECT_ROOT)/log
 BUILD_LOG_TAIL_LINES ?= 50
 ROOTFS_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/rootfs-build.log
 LINUX_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/linux-build.log
+LINUX_CONFIG_STAMP ?= $(RISCV_LINUX_HOME)/.xsai-linux-config.stamp
+LINUX_CONFIG_INTENT ?= $(RISCV_LINUX_HOME)/.xsai-linux-config.intent
 OPENSBI_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/opensbi-build.log
 GCPT_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/gcpt-build.log
+OPENSBI_QEMU_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/opensbi-qemu-build.log
+OPENSBI_NEMU_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/opensbi-nemu-build.log
+GCPT_QEMU_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/gcpt-qemu-build.log
+GCPT_NEMU_BUILD_LOG ?= $(FIRMWARE_LOG_DIR)/gcpt-nemu-build.log
 SHOW_FIRMWARE_BUILD_LOGS ?= 0
 SHOW_ROOTFS_BUILD_LOG ?= $(SHOW_FIRMWARE_BUILD_LOGS)
 SHOW_LINUX_BUILD_LOG ?= $(SHOW_FIRMWARE_BUILD_LOGS)
 SHOW_OPENSBI_BUILD_LOG ?= $(SHOW_FIRMWARE_BUILD_LOGS)
 SHOW_GCPT_BUILD_LOG ?= $(SHOW_FIRMWARE_BUILD_LOGS)
-LINUX_MAKE_JOBS ?= $(shell nproc)
+HALF_NPROC ?= $(shell n=$$(nproc); echo $$(( ($$n + 1) / 2 )))
+LINUX_MAKE_JOBS ?= $(HALF_NPROC)
+FIRMWARE_MAKE_JOBS ?= $(HALF_NPROC)
+ROOTFS_MAKE_JOBS ?= $(FIRMWARE_MAKE_JOBS)
+OPENSBI_MAKE_JOBS ?= $(FIRMWARE_MAKE_JOBS)
+GCPT_MAKE_JOBS ?= $(FIRMWARE_MAKE_JOBS)
+FORCE_LINUX_CONFIG ?= 0
+XSAI_INIT_MODE ?= manual
+ifeq ($(XSAI_INIT_MODE),ci)
+XSAI_WORKLOAD ?= llama-fake-bench-suite
+XSAI_AUTO_EXIT ?= 1
+XSAI_DROP_SHELL ?= 0
+else
+ifeq ($(XSAI_INIT_MODE),shell)
+XSAI_WORKLOAD ?= none
+XSAI_AUTO_EXIT ?= 0
+XSAI_DROP_SHELL ?= 1
+else
+XSAI_WORKLOAD ?= llama-fake-bench-suite
+XSAI_AUTO_EXIT ?= 0
+XSAI_DROP_SHELL ?= 1
+endif
+endif
+XSAI_RUN_AFTER_WORKLOAD ?= 1
+XSAI_DUMP_THP ?= 1
+XSAI_TRACE_WORKLOAD ?= 1
+XSAI_GGML_AME_LOG ?= 0
+XSAI_GGML_AME_PACKED_Q8 ?= 1
+export XSAI_INIT_MODE XSAI_WORKLOAD XSAI_AUTO_EXIT XSAI_DROP_SHELL
+export XSAI_RUN_AFTER_WORKLOAD XSAI_DUMP_THP XSAI_TRACE_WORKLOAD
+export XSAI_GGML_AME_LOG XSAI_GGML_AME_PACKED_Q8
 
 .PHONY: all check-env download-linux setup-submodules init init-force build-rootfs build-linux build-dtb build-dtb-std build-dtb-xsai build-opensbi build-opensbi-qemu build-opensbi-nemu _build-opensbi build-gcpt build-gcpt-qemu build-gcpt-nemu _build-gcpt build-gcpt-restore build-gcpt-clean clean distclean help
 
@@ -104,8 +140,13 @@ help:
 	@echo "  init-force       - Force initialize firmware submodules"
 	@echo "  build-rootfs     - Build root filesystem"
 	@echo "                     SHOW_ROOTFS_BUILD_LOG=1 to stream full rootfs build logs"
+	@echo "                     ROOTFS_MAKE_JOBS=$(ROOTFS_MAKE_JOBS)"
+	@echo "                     XSAI_INIT_MODE=$(XSAI_INIT_MODE) XSAI_WORKLOAD=$(XSAI_WORKLOAD)"
+	@echo "                     XSAI_AUTO_EXIT=$(XSAI_AUTO_EXIT) XSAI_DROP_SHELL=$(XSAI_DROP_SHELL)"
 	@echo "  build-linux      - Build Linux kernel"
 	@echo "                     SHOW_LINUX_BUILD_LOG=1 to stream full kernel build logs"
+	@echo "                     LINUX_MAKE_JOBS=$(LINUX_MAKE_JOBS)"
+	@echo "                     FORCE_LINUX_CONFIG=1 to rerun defconfig/olddefconfig/prepare"
 	@echo "                     INITRAMFS_SOURCE=$(INITRAMFS_SOURCE)"
 	@echo "                     INITRAMFS_COMMON_SOURCES=$(INITRAMFS_COMMON_SOURCES)"
 	@echo "  build-dtb        - Build XSAI device tree blob (default)"
@@ -119,6 +160,7 @@ help:
 	@echo "  build-gcpt-restore - Build restore-only GCPT binary for checkpoint resume"
 	@echo "                     SHOW_OPENSBI_BUILD_LOG=1 to stream full OpenSBI build logs"
 	@echo "                     SHOW_GCPT_BUILD_LOG=1 to stream full GCPT build logs"
+	@echo "                     OPENSBI_MAKE_JOBS=$(OPENSBI_MAKE_JOBS) GCPT_MAKE_JOBS=$(GCPT_MAKE_JOBS)"
 	@echo "  build-gcpt-clean - Force clean rebuild of GCPT (after editing csr.h etc.)"
 	@echo "  clean            - Clean build artifacts"
 	@echo "  distclean        - Deep clean: remove downloads and deinit submodules"
@@ -173,11 +215,16 @@ setup-submodules:
 
 build-rootfs: setup-submodules
 	@echo "Building root filesystem..."
+	@echo "  XSAI init: mode=$(XSAI_INIT_MODE) workload=$(XSAI_WORKLOAD) auto_exit=$(XSAI_AUTO_EXIT) drop_shell=$(XSAI_DROP_SHELL)"
 	@mkdir -p $(FIRMWARE_LOG_DIR)
 	@if [ "$(SHOW_ROOTFS_BUILD_LOG)" = "1" ]; then \
-		cd $(RISCV_ROOTFS_HOME) && $(MAKE) rootfsimg -j; \
+		echo "$$(date '+[fw %F %T %z] START build-rootfs jobs=$(ROOTFS_MAKE_JOBS)')"; \
+		cd $(RISCV_ROOTFS_HOME) && $(MAKE) rootfsimg -j$(ROOTFS_MAKE_JOBS); \
+		echo "$$(date '+[fw %F %T %z] END build-rootfs')"; \
 	else \
-		cd $(RISCV_ROOTFS_HOME) && $(MAKE) rootfsimg -j > "$(ROOTFS_BUILD_LOG)" 2>&1 || { \
+		( echo "$$(date '+[fw %F %T %z] START build-rootfs jobs=$(ROOTFS_MAKE_JOBS)')" && \
+		  cd $(RISCV_ROOTFS_HOME) && $(MAKE) rootfsimg -j$(ROOTFS_MAKE_JOBS) && \
+		  echo "$$(date '+[fw %F %T %z] END build-rootfs')" ) > "$(ROOTFS_BUILD_LOG)" 2>&1 || { \
 			status=$$?; \
 			echo "✗ Root filesystem build failed. Full log: $(ROOTFS_BUILD_LOG)"; \
 			echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(ROOTFS_BUILD_LOG) ---"; \
@@ -190,51 +237,116 @@ build-rootfs: setup-submodules
 
 build-linux:
 	@echo "Configuring Linux kernel..."
+	@mkdir -p $(dir $(LINUX_CONFIG_STAMP))
 	@cd $(RISCV_LINUX_HOME) && \
-		cp $(WORKLOAD_BUILD_ENV_HOME)/configs/xiangshan_defconfig arch/riscv/configs/xiangshan_defconfig && \
-		$(MAKE) xiangshan_defconfig && \
-		[ -n "$(RISCV_LD_SO)" ] && [ -n "$(RISCV_LIBC_SO)" ] && \
-		[ -n "$(RISCV_LIBRESOLV_SO)" ] && [ -n "$(RISCV_LIBM_SO)" ] && \
-		[ -n "$(RISCV_LIBDL_SO)" ] && [ -n "$(RISCV_LIBPTHREAD_SO)" ] && \
-		./scripts/config --enable CONFIG_BLOCK && \
-		./scripts/config --enable CONFIG_BLK_DEV && \
-		./scripts/config --enable CONFIG_VIRTIO_MENU && \
-		./scripts/config --enable CONFIG_VIRTIO_MMIO && \
-		./scripts/config --enable CONFIG_VIRTIO_BLK && \
-		./scripts/config --enable CONFIG_SYSFS && \
-		./scripts/config --enable CONFIG_TMPFS && \
-		./scripts/config --enable CONFIG_DEVTMPFS && \
-		./scripts/config --enable CONFIG_EXT4_FS && \
-		./scripts/config --enable CONFIG_BINFMT_SCRIPT && \
-		./scripts/config --enable CONFIG_RISCV_ISA_V && \
-		./scripts/config --enable CONFIG_RISCV_ISA_V_DEFAULT_ENABLE && \
-		./scripts/config --set-val CONFIG_RISCV_ISA_V_UCOPY_THRESHOLD 768 && \
-		./scripts/config --enable CONFIG_RISCV_ISA_V_PREEMPTIVE && \
-		./scripts/config --disable CONFIG_RISCV_ISA_ZICBOZ && \
-		./scripts/config --disable CONFIG_RISCV_ISA_ZICBOP && \
-		./scripts/config --disable CONFIG_RISCV_ISA_ZICBOM && \
-		./scripts/config --disable CONFIG_SMP && \
-		./scripts/config --enable CONFIG_DEVMEM && \
-		./scripts/config --disable CONFIG_STRICT_DEVMEM && \
-		./scripts/config --disable CONFIG_IO_STRICT_DEVMEM && \
-		./scripts/config --set-str CONFIG_INITRAMFS_SOURCE "$(INITRAMFS_COMMON_SOURCES) $(INITRAMFS_SOURCE)" && \
-		./scripts/config --disable CONFIG_FLATMEM_MANUAL && \
-		./scripts/config --enable CONFIG_SPARSEMEM_MANUAL && \
-		./scripts/config --enable CONFIG_SPARSEMEM_VMEMMAP && \
-		./scripts/config --enable CONFIG_DEFERRED_STRUCT_PAGE_INIT && \
-		./scripts/config --enable CONFIG_TRANSPARENT_HUGEPAGE && \
-		./scripts/config --disable CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS && \
-		./scripts/config --enable CONFIG_TRANSPARENT_HUGEPAGE_MADVISE && \
-		./scripts/config --enable CONFIG_PERF_EVENTS && \
-		./scripts/config --enable CONFIG_RISCV_PMU_SBI && \
-		$(MAKE) olddefconfig && \
-		$(MAKE) prepare
+		{ \
+			echo "defconfig=$$(sha256sum "$(WORKLOAD_BUILD_ENV_HOME)/configs/xiangshan_defconfig" | awk '{print $$1}')"; \
+			echo "INITRAMFS_COMMON_SOURCES=$(INITRAMFS_COMMON_SOURCES)"; \
+			echo "INITRAMFS_SOURCE=$(INITRAMFS_SOURCE)"; \
+			echo "CONFIG_BLOCK=y"; \
+			echo "CONFIG_BLK_DEV=y"; \
+			echo "CONFIG_VIRTIO_MENU=y"; \
+			echo "CONFIG_VIRTIO_MMIO=y"; \
+			echo "CONFIG_VIRTIO_BLK=y"; \
+			echo "CONFIG_SYSFS=y"; \
+			echo "CONFIG_TMPFS=y"; \
+			echo "CONFIG_DEVTMPFS=y"; \
+			echo "CONFIG_EXT4_FS=y"; \
+			echo "CONFIG_BINFMT_SCRIPT=y"; \
+			echo "CONFIG_RISCV_ISA_V=y"; \
+			echo "CONFIG_RISCV_ISA_V_DEFAULT_ENABLE=y"; \
+			echo "CONFIG_RISCV_ISA_V_UCOPY_THRESHOLD=768"; \
+			echo "CONFIG_RISCV_ISA_V_PREEMPTIVE=y"; \
+			echo "CONFIG_RISCV_ISA_ZICBOZ=n"; \
+			echo "CONFIG_RISCV_ISA_ZICBOP=n"; \
+			echo "CONFIG_RISCV_ISA_ZICBOM=n"; \
+			echo "CONFIG_SMP=n"; \
+			echo "CONFIG_DEVMEM=y"; \
+			echo "CONFIG_STRICT_DEVMEM=n"; \
+			echo "CONFIG_IO_STRICT_DEVMEM=n"; \
+			echo "CONFIG_FLATMEM_MANUAL=n"; \
+			echo "CONFIG_SPARSEMEM_MANUAL=y"; \
+			echo "CONFIG_SPARSEMEM_VMEMMAP=y"; \
+			echo "CONFIG_DEFERRED_STRUCT_PAGE_INIT=y"; \
+			echo "CONFIG_TRANSPARENT_HUGEPAGE=y"; \
+			echo "CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS=n"; \
+			echo "CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y"; \
+			echo "CONFIG_PERF_EVENTS=y"; \
+			echo "CONFIG_RISCV_PMU_SBI=y"; \
+		} > "$(LINUX_CONFIG_INTENT)" && \
+		INTENT_HASH=$$(sha256sum "$(LINUX_CONFIG_INTENT)" | awk '{print $$1}') && \
+		CONFIG_HASH=missing && \
+		if [ -f .config ]; then CONFIG_HASH=$$(sha256sum .config | awk '{print $$1}'); fi && \
+		NEED_CONFIG=0 && \
+		if [ "$(FORCE_LINUX_CONFIG)" = "1" ]; then \
+			echo "  Linux config refresh reason: FORCE_LINUX_CONFIG=1"; \
+			NEED_CONFIG=1; \
+		elif [ ! -f .config ] || [ ! -f include/config/auto.conf ] || [ ! -f include/generated/autoconf.h ]; then \
+			echo "  Linux config refresh reason: missing generated config files"; \
+			NEED_CONFIG=1; \
+		elif [ ! -f "$(LINUX_CONFIG_STAMP)" ]; then \
+			echo "  Linux config refresh reason: missing config stamp"; \
+			NEED_CONFIG=1; \
+		elif ! grep -qx "intent=$$INTENT_HASH" "$(LINUX_CONFIG_STAMP)" || ! grep -qx "config=$$CONFIG_HASH" "$(LINUX_CONFIG_STAMP)"; then \
+			echo "  Linux config refresh reason: config intent or .config changed"; \
+			NEED_CONFIG=1; \
+		fi && \
+		if [ "$$NEED_CONFIG" = "1" ]; then \
+			echo "$$(date '+[fw %F %T %z] START configure-linux')"; \
+			cp $(WORKLOAD_BUILD_ENV_HOME)/configs/xiangshan_defconfig arch/riscv/configs/xiangshan_defconfig && \
+			$(MAKE) xiangshan_defconfig && \
+			[ -n "$(RISCV_LD_SO)" ] && [ -n "$(RISCV_LIBC_SO)" ] && \
+			[ -n "$(RISCV_LIBRESOLV_SO)" ] && [ -n "$(RISCV_LIBM_SO)" ] && \
+			[ -n "$(RISCV_LIBDL_SO)" ] && [ -n "$(RISCV_LIBPTHREAD_SO)" ] && \
+			./scripts/config --enable CONFIG_BLOCK && \
+			./scripts/config --enable CONFIG_BLK_DEV && \
+			./scripts/config --enable CONFIG_VIRTIO_MENU && \
+			./scripts/config --enable CONFIG_VIRTIO_MMIO && \
+			./scripts/config --enable CONFIG_VIRTIO_BLK && \
+			./scripts/config --enable CONFIG_SYSFS && \
+			./scripts/config --enable CONFIG_TMPFS && \
+			./scripts/config --enable CONFIG_DEVTMPFS && \
+			./scripts/config --enable CONFIG_EXT4_FS && \
+			./scripts/config --enable CONFIG_BINFMT_SCRIPT && \
+			./scripts/config --enable CONFIG_RISCV_ISA_V && \
+			./scripts/config --enable CONFIG_RISCV_ISA_V_DEFAULT_ENABLE && \
+			./scripts/config --set-val CONFIG_RISCV_ISA_V_UCOPY_THRESHOLD 768 && \
+			./scripts/config --enable CONFIG_RISCV_ISA_V_PREEMPTIVE && \
+			./scripts/config --disable CONFIG_RISCV_ISA_ZICBOZ && \
+			./scripts/config --disable CONFIG_RISCV_ISA_ZICBOP && \
+			./scripts/config --disable CONFIG_RISCV_ISA_ZICBOM && \
+			./scripts/config --disable CONFIG_SMP && \
+			./scripts/config --enable CONFIG_DEVMEM && \
+			./scripts/config --disable CONFIG_STRICT_DEVMEM && \
+			./scripts/config --disable CONFIG_IO_STRICT_DEVMEM && \
+			./scripts/config --set-str CONFIG_INITRAMFS_SOURCE "$(INITRAMFS_COMMON_SOURCES) $(INITRAMFS_SOURCE)" && \
+			./scripts/config --disable CONFIG_FLATMEM_MANUAL && \
+			./scripts/config --enable CONFIG_SPARSEMEM_MANUAL && \
+			./scripts/config --enable CONFIG_SPARSEMEM_VMEMMAP && \
+			./scripts/config --enable CONFIG_DEFERRED_STRUCT_PAGE_INIT && \
+			./scripts/config --enable CONFIG_TRANSPARENT_HUGEPAGE && \
+			./scripts/config --disable CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS && \
+			./scripts/config --enable CONFIG_TRANSPARENT_HUGEPAGE_MADVISE && \
+			./scripts/config --enable CONFIG_PERF_EVENTS && \
+			./scripts/config --enable CONFIG_RISCV_PMU_SBI && \
+			$(MAKE) olddefconfig && \
+			$(MAKE) prepare && \
+			CONFIG_HASH=$$(sha256sum .config | awk '{print $$1}') && \
+			printf 'intent=%s\nconfig=%s\n' "$$INTENT_HASH" "$$CONFIG_HASH" > "$(LINUX_CONFIG_STAMP)" && \
+			echo "$$(date '+[fw %F %T %z] END configure-linux')"; \
+		else \
+			echo "✓ Linux config up to date; skipping defconfig/olddefconfig/prepare"; \
+		fi
 	@echo "Building Linux kernel..."
 	@mkdir -p $(FIRMWARE_LOG_DIR)
 	@if [ "$(SHOW_LINUX_BUILD_LOG)" = "1" ]; then \
+		echo "$$(date '+[fw %F %T %z] START build-linux jobs=$(LINUX_MAKE_JOBS)')"; \
 		cd $(RISCV_LINUX_HOME) && $(MAKE) -j$(LINUX_MAKE_JOBS); \
+		echo "$$(date '+[fw %F %T %z] END build-linux')"; \
 	else \
-		cd $(RISCV_LINUX_HOME) && $(MAKE) -j$(LINUX_MAKE_JOBS) > "$(LINUX_BUILD_LOG)" 2>&1 || { \
+		( echo "$$(date '+[fw %F %T %z] START build-linux jobs=$(LINUX_MAKE_JOBS)')" && \
+		  cd $(RISCV_LINUX_HOME) && $(MAKE) -j$(LINUX_MAKE_JOBS) && \
+		  echo "$$(date '+[fw %F %T %z] END build-linux')" ) > "$(LINUX_BUILD_LOG)" 2>&1 || { \
 			status=$$?; \
 			echo "✗ Linux kernel build failed. Full log: $(LINUX_BUILD_LOG)"; \
 			echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(LINUX_BUILD_LOG) ---"; \
@@ -263,6 +375,7 @@ build-dtb: build-dtb-xsai
 
 build-dtb-xsai: setup-submodules
 	@echo "Building XSAI device tree blob..."
+	@echo "$$(date '+[fw %F %T %z] START build-dtb-xsai')"
 	@cd $(WORKLOAD_BUILD_ENV_HOME)/dts && \
 		mkdir -p build && \
 		python3 DTSGen.py \
@@ -282,6 +395,7 @@ build-dtb-xsai: setup-submodules
 		$(XSAI_DTB_FILE) || exit $$?
 	@echo "✓ XSAI DTB built: $(XSAI_DTB_FILE)"
 	@echo "  DTS dump:        $(WORKLOAD_BUILD_ENV_HOME)/dts/build/xiangshan_ai.dts"
+	@echo "$$(date '+[fw %F %T %z] END build-dtb-xsai')"
 
 # build-opensbi: build-linux build-dtb
 # FW_PAYLOAD_FDT_ADDR is computed dynamically from the Linux Image size so that
@@ -295,14 +409,20 @@ build-opensbi-qemu:
 	@$(MAKE) _build-opensbi \
 		OPENSBI_BUILD_ROOT=$(OPENSBI_QEMU_BUILD_ROOT) \
 		OPENSBI_PAYLOAD_OUT=$(OPENSBI_QEMU_PAYLOAD) \
-		OPENSBI_EMBED_DTB=0
+		OPENSBI_EMBED_DTB=0 \
+		OPENSBI_BUILD_LOG=$(OPENSBI_QEMU_BUILD_LOG)
 
 build-opensbi-nemu:
 	@$(MAKE) _build-opensbi \
 		OPENSBI_BUILD_ROOT=$(OPENSBI_NEMU_BUILD_ROOT) \
 		OPENSBI_PAYLOAD_OUT=$(OPENSBI_NEMU_PAYLOAD) \
-		OPENSBI_EMBED_DTB=1
+		OPENSBI_EMBED_DTB=1 \
+		OPENSBI_BUILD_LOG=$(OPENSBI_NEMU_BUILD_LOG)
 
+# Keep OpenSBI O= build roots for incremental rebuilds. The previous
+# rm -rf "$(OPENSBI_BUILD_ROOT)" workaround avoided occasional stale firmware
+# link artifacts, but it forced full QEMU/NEMU OpenSBI rebuilds on every run.
+# Clean the affected build root explicitly if the stale-link issue reappears.
 _build-opensbi:
 	@echo "Building OpenSBI firmware..."
 	@if [ ! -f "$(OPENSBI)/Makefile" ]; then \
@@ -325,19 +445,23 @@ _build-opensbi:
 	 	EXTRA_FW_ARGS+=(FW_FDT_PATH=$(DTB_FILE)); \
 	 fi; \
 	 if [ "$(SHOW_OPENSBI_BUILD_LOG)" = "1" ]; then \
-		cd $(OPENSBI) && rm -rf "$(OPENSBI_BUILD_ROOT)" && $(MAKE) O="$(OPENSBI_BUILD_ROOT)" PLATFORM=generic \
+		echo "$$(date '+[fw %F %T %z] START build-opensbi jobs=$(OPENSBI_MAKE_JOBS) root=$(OPENSBI_BUILD_ROOT)')"; \
+		cd $(OPENSBI) && $(MAKE) O="$(OPENSBI_BUILD_ROOT)" PLATFORM=generic \
 			FW_PAYLOAD_PATH=$(LINUX_IMAGE) \
 			FW_PAYLOAD_OFFSET=0x100000 \
 			FW_PAYLOAD_FDT_ADDR=$$FW_FDT_ADDR \
 			"$${EXTRA_FW_ARGS[@]}" \
-			-j$(shell nproc); \
+			-j$(OPENSBI_MAKE_JOBS); \
+		echo "$$(date '+[fw %F %T %z] END build-opensbi root=$(OPENSBI_BUILD_ROOT)')"; \
 	 else \
-		cd $(OPENSBI) && rm -rf "$(OPENSBI_BUILD_ROOT)" && $(MAKE) O="$(OPENSBI_BUILD_ROOT)" PLATFORM=generic \
+		( echo "$$(date '+[fw %F %T %z] START build-opensbi jobs=$(OPENSBI_MAKE_JOBS) root=$(OPENSBI_BUILD_ROOT)')" && \
+		  cd $(OPENSBI) && $(MAKE) O="$(OPENSBI_BUILD_ROOT)" PLATFORM=generic \
 			FW_PAYLOAD_PATH=$(LINUX_IMAGE) \
 			FW_PAYLOAD_OFFSET=0x100000 \
 			FW_PAYLOAD_FDT_ADDR=$$FW_FDT_ADDR \
 			"$${EXTRA_FW_ARGS[@]}" \
-			-j$(shell nproc) > "$(OPENSBI_BUILD_LOG)" 2>&1 || { \
+			-j$(OPENSBI_MAKE_JOBS) && \
+		  echo "$$(date '+[fw %F %T %z] END build-opensbi root=$(OPENSBI_BUILD_ROOT)')" ) > "$(OPENSBI_BUILD_LOG)" 2>&1 || { \
 				status=$$?; \
 				echo "✗ OpenSBI build failed. Full log: $(OPENSBI_BUILD_LOG)"; \
 				echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(OPENSBI_BUILD_LOG) ---"; \
@@ -355,13 +479,15 @@ build-gcpt-qemu: build-opensbi-qemu
 	@$(MAKE) _build-gcpt \
 		GCPT_BUILD_ROOT=$(GCPT_QEMU_BUILD_ROOT) \
 		GCPT_PAYLOAD_SOURCE=$(OPENSBI_QEMU_PAYLOAD) \
-		GCPT_OUTPUT=$(GCPT_QEMU_BIN)
+		GCPT_OUTPUT=$(GCPT_QEMU_BIN) \
+		GCPT_BUILD_LOG=$(GCPT_QEMU_BUILD_LOG)
 
 build-gcpt-nemu: build-opensbi-nemu
 	@$(MAKE) _build-gcpt \
 		GCPT_BUILD_ROOT=$(GCPT_NEMU_BUILD_ROOT) \
 		GCPT_PAYLOAD_SOURCE=$(OPENSBI_NEMU_PAYLOAD) \
-		GCPT_OUTPUT=$(GCPT_NEMU_BIN)
+		GCPT_OUTPUT=$(GCPT_NEMU_BIN) \
+		GCPT_BUILD_LOG=$(GCPT_NEMU_BUILD_LOG)
 
 _build-gcpt:
 	@if [ ! -f "$(GCPT_RESTORE_HOME)/Makefile" ]; then \
@@ -370,9 +496,13 @@ _build-gcpt:
 	fi
 	@mkdir -p $(FIRMWARE_LOG_DIR)
 	@if [ "$(SHOW_GCPT_BUILD_LOG)" = "1" ]; then \
-		cd $(GCPT_RESTORE_HOME) && $(MAKE) O=$(GCPT_BUILD_ROOT) clean && $(MAKE) O=$(GCPT_BUILD_ROOT) GCPT_PAYLOAD_PATH=$(GCPT_PAYLOAD_SOURCE) -j && ls $(GCPT_OUTPUT); \
+		echo "$$(date '+[fw %F %T %z] START build-gcpt jobs=$(GCPT_MAKE_JOBS) root=$(GCPT_BUILD_ROOT)')"; \
+		cd $(GCPT_RESTORE_HOME) && $(MAKE) O=$(GCPT_BUILD_ROOT) clean && $(MAKE) O=$(GCPT_BUILD_ROOT) GCPT_PAYLOAD_PATH=$(GCPT_PAYLOAD_SOURCE) -j$(GCPT_MAKE_JOBS) && ls $(GCPT_OUTPUT); \
+		echo "$$(date '+[fw %F %T %z] END build-gcpt root=$(GCPT_BUILD_ROOT)')"; \
 	else \
-		( cd $(GCPT_RESTORE_HOME) && $(MAKE) O=$(GCPT_BUILD_ROOT) clean && $(MAKE) O=$(GCPT_BUILD_ROOT) GCPT_PAYLOAD_PATH=$(GCPT_PAYLOAD_SOURCE) -j && ls $(GCPT_OUTPUT) ) > "$(GCPT_BUILD_LOG)" 2>&1 || { \
+		( echo "$$(date '+[fw %F %T %z] START build-gcpt jobs=$(GCPT_MAKE_JOBS) root=$(GCPT_BUILD_ROOT)')" && \
+		  cd $(GCPT_RESTORE_HOME) && $(MAKE) O=$(GCPT_BUILD_ROOT) clean && $(MAKE) O=$(GCPT_BUILD_ROOT) GCPT_PAYLOAD_PATH=$(GCPT_PAYLOAD_SOURCE) -j$(GCPT_MAKE_JOBS) && ls $(GCPT_OUTPUT) && \
+		  echo "$$(date '+[fw %F %T %z] END build-gcpt root=$(GCPT_BUILD_ROOT)')" ) > "$(GCPT_BUILD_LOG)" 2>&1 || { \
 			status=$$?; \
 			echo "✗ GCPT build failed. Full log: $(GCPT_BUILD_LOG)"; \
 			echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(GCPT_BUILD_LOG) ---"; \
@@ -388,15 +518,17 @@ build-gcpt-restore:
 		echo "Initializing gcpt_restore submodule..."; \
 		cd $(WORK_DIR) && git submodule update --init --force gcpt_restore; \
 	fi
-	cd $(GCPT_RESTORE_HOME) && $(MAKE) O=$(GCPT_RESTORE_BUILD_ROOT) clean && $(MAKE) O=$(GCPT_RESTORE_BUILD_ROOT) -j && ls $(GCPT_RESTORE_BIN) || exit $$?
+	@echo "$$(date '+[fw %F %T %z] START build-gcpt-restore jobs=$(GCPT_MAKE_JOBS) root=$(GCPT_RESTORE_BUILD_ROOT)')"
+	cd $(GCPT_RESTORE_HOME) && $(MAKE) O=$(GCPT_RESTORE_BUILD_ROOT) clean && $(MAKE) O=$(GCPT_RESTORE_BUILD_ROOT) -j$(GCPT_MAKE_JOBS) && ls $(GCPT_RESTORE_BIN) || exit $$?
+	@echo "$$(date '+[fw %F %T %z] END build-gcpt-restore root=$(GCPT_RESTORE_BUILD_ROOT)')"
 
 # Force a clean rebuild of gcpt (useful after editing src/csr.h etc.)
 build-gcpt-clean:
 	@mkdir -p $(FIRMWARE_LOG_DIR)
 	@if [ "$(SHOW_GCPT_BUILD_LOG)" = "1" ]; then \
-		cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin; \
+		cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j$(GCPT_MAKE_JOBS) && ls build/gcpt.bin; \
 	else \
-		( cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j && ls build/gcpt.bin ) > "$(GCPT_BUILD_LOG)" 2>&1 || { \
+		( cd $(GCPT_RESTORE_HOME) && $(MAKE) clean && $(MAKE) GCPT_PAYLOAD_PATH=$(OPENSBI_PAYLOAD) -j$(GCPT_MAKE_JOBS) && ls build/gcpt.bin ) > "$(GCPT_BUILD_LOG)" 2>&1 || { \
 			status=$$?; \
 			echo "✗ GCPT build failed. Full log: $(GCPT_BUILD_LOG)"; \
 			echo "--- Last $(BUILD_LOG_TAIL_LINES) lines of $(GCPT_BUILD_LOG) ---"; \
