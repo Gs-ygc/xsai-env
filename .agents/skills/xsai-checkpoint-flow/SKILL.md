@@ -186,19 +186,26 @@ For software validation around checkpointed workloads, the current repo order is
 1. `make run-qemu`
 2. `make run-nemu`
 3. `make ckpt`
-4. `make run-nemu PAYLOAD=firmware/checkpoints/build/app/1/_1_1.zstd`
-5. `make run-emu PAYLOAD=firmware/checkpoints/build/app/1/_1_1.zstd`
+4. `make run-nemu PAYLOAD=<checkpoint.zstd>`
+5. `make run-emu PAYLOAD=<checkpoint.zstd>`
 
-The checkpoint payload above matches the current defaults. If `WORKLOAD_NAME` or `CHECKPOINT_CONFIG` changes, adjust it.
+Checkpoint payload paths depend on the generated SimPoint/checkpoint index as well as `WORKLOAD_NAME` and `CHECKPOINT_CONFIG`. Treat `firmware/checkpoints/build/app/1/_1_1.zstd` as a common example, not a universal constant.
 
 Current top-level defaults from `Makefile` are:
 
-- `CPT_INTERVAL ?= 100`
+- `CPT_INTERVAL ?= 100000`
 - `PROFILING_INTERVALS ?= $(CPT_INTERVAL)`
-- `SIMPOINT_MAX_K ?= 10`
+- `SIMPOINT_MAX_K ?= 30`
 - `SMP ?= 1`
 
-If you call `scripts/checkpoint.sh` directly, keep those defaults in mind and make sure they match your intended top-level flow.
+Direct `scripts/checkpoint.sh` invocation keeps faster single-slice script defaults:
+
+- `CPT_INTERVAL=100`
+- `PROFILING_INTERVALS=$CPT_INTERVAL`
+- `SIMPOINT_MAX_K=10`
+- `SMP=1`
+
+Keep the entrypoint difference in mind when comparing top-level `make ckpt` behavior with direct script runs.
 
 ## Easy mistakes
 

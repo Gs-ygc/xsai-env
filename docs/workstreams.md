@@ -84,8 +84,8 @@ For software changes, the current default validation order should be:
 1. `make run-qemu`
 2. `make run-nemu`
 3. `make ckpt`
-4. `make run-nemu PAYLOAD=firmware/checkpoints/build/app/1/_1_1.zstd`
-5. `make run-emu PAYLOAD=firmware/checkpoints/build/app/1/_1_1.zstd`
+4. `make run-nemu PAYLOAD=<checkpoint.zstd>`
+5. `make run-emu PAYLOAD=<checkpoint.zstd>`
 
 Why this order:
 
@@ -93,7 +93,18 @@ Why this order:
 - NEMU is roughly two orders of magnitude faster than RTL and is the preferred golden-model step before touching RTL.
 - RTL should be used after the software path is already narrowed down, mainly for realistic performance behavior or workload-level ST validation.
 
-The checkpoint payload path above is the common path under the current defaults:
+Checkpoint defaults differ by entrypoint.
+
+Top-level `make ckpt` currently uses the SimPoint sampling defaults from `Makefile`:
+
+- `CHECKPOINT_CONFIG=build`
+- `WORKLOAD_NAME=app`
+- `CPT_INTERVAL=100000`
+- `PROFILING_INTERVALS=CPT_INTERVAL`
+- `SIMPOINT_MAX_K=30`
+- `SMP=1`
+
+Direct `scripts/checkpoint.sh` invocation keeps faster single-slice script defaults:
 
 - `CHECKPOINT_CONFIG=build`
 - `WORKLOAD_NAME=app`
@@ -102,7 +113,7 @@ The checkpoint payload path above is the common path under the current defaults:
 - `SIMPOINT_MAX_K=10`
 - `SMP=1`
 
-If those knobs change, the checkpoint payload path changes too. Treat `firmware/checkpoints/build/app/1/_1_1.zstd` as the default example, not a universal constant.
+Checkpoint payload paths depend on the generated SimPoint/checkpoint index as well as `WORKLOAD_NAME` and `CHECKPOINT_CONFIG`. Treat `firmware/checkpoints/build/app/1/_1_1.zstd` as a common example, not a universal constant.
 
 There are two common checkpointing modes in this repo:
 
@@ -290,8 +301,8 @@ For software-heavy changes, do not jump to RTL first. The default repo ladder is
 - `make run-qemu`
 - `make run-nemu`
 - `make ckpt`
-- `make run-nemu PAYLOAD=firmware/checkpoints/build/app/1/_1_1.zstd`
-- `make run-emu PAYLOAD=firmware/checkpoints/build/app/1/_1_1.zstd`
+- `make run-nemu PAYLOAD=<checkpoint.zstd>`
+- `make run-emu PAYLOAD=<checkpoint.zstd>`
 
 ## Routing Advice for Humans and AI
 

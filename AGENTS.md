@@ -66,12 +66,16 @@ For software validation, the current default ladder is:
 - `make run-qemu`
 - `make run-nemu`
 - `make ckpt`
-- `make run-nemu PAYLOAD=firmware/checkpoints/build/app/1/_1_1.zstd`
-- `make run-emu PAYLOAD=firmware/checkpoints/build/app/1/_1_1.zstd`
+- `make run-nemu PAYLOAD=<checkpoint.zstd>`
+- `make run-emu PAYLOAD=<checkpoint.zstd>`
 
 Rationale:
 - QEMU is usually much faster than NEMU and easier for software bug analysis.
 - NEMU is much faster than RTL and should be the main golden-model gate before RTL.
 - RTL is mainly for realistic performance behavior and workload-level ST validation after software issues have been narrowed down.
 
-If `WORKLOAD_NAME` or `CHECKPOINT_CONFIG` changes, adjust the checkpoint payload path accordingly.
+Checkpoint defaults differ by entrypoint:
+- Top-level `make ckpt` currently uses SimPoint sampling defaults from `Makefile`: `CPT_INTERVAL=100000`, `PROFILING_INTERVALS=$(CPT_INTERVAL)`, `SIMPOINT_MAX_K=30`, `SMP=1`, `CHECKPOINT_CONFIG=build`, and `WORKLOAD_NAME=app`.
+- Direct `scripts/checkpoint.sh` invocation keeps its fast single-slice script defaults: `CPT_INTERVAL=100`, `PROFILING_INTERVALS=$CPT_INTERVAL`, `SIMPOINT_MAX_K=10`, `SMP=1`, `CHECKPOINT_CONFIG=build`, and `WORKLOAD_NAME=app`.
+
+Checkpoint payload paths depend on the generated SimPoint/checkpoint index as well as `WORKLOAD_NAME` and `CHECKPOINT_CONFIG`. Treat `firmware/checkpoints/build/app/1/_1_1.zstd` as a common example, not a universal constant.

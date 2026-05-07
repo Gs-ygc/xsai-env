@@ -20,7 +20,7 @@
 # Usage:
 #   ./scripts/checkpoint.sh [profile|cluster|checkpoint|all] [OPTIONS]
 #
-# Key environment variables (all have defaults):
+# Key environment variables (all have defaults when this script is called directly):
 #   XS_PROJECT_ROOT       — repo root (auto-detected if sourced from root)
 #   WORKLOAD_NAME         — logical name for the workload        [default: app]
 #   MODEL_IMG             — path to the disk image (qcow2/raw)
@@ -31,6 +31,10 @@
 #   MEMORY                — QEMU guest memory                     [default: 8G]
 #   SMP                   — QEMU SMP hart count                   [default: 1]
 #   CKPT_VIRTIO_SERIAL    — enable host_guest virtio-serial port  [default: 0]
+#
+# Note: top-level `make ckpt` passes Makefile defaults into this script. Those
+# defaults currently use the SimPoint sampling profile, typically
+# CPT_INTERVAL=100000 and SIMPOINT_MAX_K=30.
 # =============================================================================
 set -euo pipefail
 
@@ -333,9 +337,9 @@ case "$PHASE" in
     checkpoint) do_checkpoint ;;
     uniform)    do_uniform ;;
     all)
-        # do_profile
-        # do_cluster
-        no_simpoint
+        do_profile
+        do_cluster
+        # no_simpoint
         do_checkpoint
         ;;
     *)
