@@ -6,6 +6,9 @@ software/*
 !software/README.md
 local/
 *.cache/*
+__pycache__/
+*.py[cod]
+simpoint_eval_*.json
 *.metals
 firmware/*linux*
 compile_commands.json
