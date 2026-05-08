@@ -76,6 +76,25 @@ The root bump PR must include:
 - reason the new commit is needed by `xsai-env`
 - root-level validation, usually from `AGENTS.md` or `docs/workstreams.md`
 
+## Rootfs issue-disabled exception
+
+`firmware/riscv-rootfs` may use an `xsai-env` integration issue when the
+rootfs repository cannot accept issues.
+
+For this exception:
+
+1. Commit and push the rootfs change to the rootfs remote first.
+2. Create or link an `xsai-env` issue using `xsai-issue-pr-flow` title prefixes
+   and template fields.
+3. In the `xsai-env` issue, state that the code change lives in
+   `firmware/riscv-rootfs`, rootfs issues are unavailable, and list the rootfs
+   branch plus pushed commit SHA.
+4. Update the root gitlink only after the rootfs commit is fetchable.
+5. Run `make versions`, stage `VERSIONS`, and include both the issue and rootfs
+   commit/PR in the parent PR body.
+
+This exception does not apply to local-only rootfs commits.
+
 ## Nested submodules
 
 Submit from the inside out.

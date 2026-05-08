@@ -86,3 +86,9 @@ If the owning submodule repository has issues disabled or lacks templates, do no
 - enable issues in the submodule repository,
 - track the work as an `xsai-env` integration issue,
 - or proceed with a PR-only flow.
+
+Known exception: `firmware/riscv-rootfs` may be tracked by an `xsai-env`
+integration issue while rootfs issues are unavailable. The issue body must say
+that the code change lives in rootfs, explain why the root issue is used, and
+link the pushed rootfs branch/commit before the parent gitlink bump PR is
+opened.
