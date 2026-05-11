@@ -62,3 +62,4 @@
 [submodule "tools/TMA-toolkit"]
 	path = tools/TMA-toolkit
 	url = https://github.com/OurCompArchGroup/TMA-toolkit.git
+	branch = main
