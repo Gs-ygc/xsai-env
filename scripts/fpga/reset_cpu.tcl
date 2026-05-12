@@ -1,5 +1,6 @@
 # Vivado VIO CPU reset helper for xsai-env FPGA bring-up.
 # Inspired by OpenXiangShan/env-scripts fpga_diff reset helpers.
+# Expected probe names on the programmed design: vio_sw4 (DDR reset), vio_sw5 (CPU reset), vio_sw6 (halt/run).
 
 if {$argc < 1} {
   puts "Usage: vivado -mode batch -source reset_cpu.tcl -tclargs <path/to/xsai.ltx>"

@@ -28,6 +28,7 @@ FPGA_HOST ?= fpga
 FPGA_REMOTE_PAYLOAD ?= ~/t3.bin
 FPGA_LTX ?= /home/fpga/xsai.ltx
 FPGA_DRIVER ?= ~/nexus-am/apps/dse-driver-ai/build/dse-driver-ai-riscv64-xs-driver.bin
+FPGA_XDMA_PROCESS ?= ~/ai/xdma_process/build/xdma_process
 FPGA_TIMEOUT ?= 60
 FPGA_UART_CMD ?=
 FPGA_PASS_PATTERN ?=
@@ -115,7 +116,8 @@ help:
 	@echo "  make fpga-reset  - Reset FPGA CPU via remote Vivado/VIO using FPGA_LTX"
 	@echo "  make run-fpga    - Upload PAYLOAD and execute remote XDMA load/run flow"
 	@echo "                     Knobs: FPGA_HOST FPGA_REMOTE_PAYLOAD FPGA_DRIVER FPGA_LTX"
-	@echo "                            FPGA_TIMEOUT FPGA_UART_CMD FPGA_PASS_PATTERN FPGA_FAIL_PATTERN"
+	@echo "                            FPGA_XDMA_PROCESS FPGA_TIMEOUT FPGA_UART_CMD"
+	@echo "                            FPGA_PASS_PATTERN FPGA_FAIL_PATTERN"
 	@echo "                            FPGA_PCIE_REMOVE_CMD FPGA_PCIE_RESCAN_CMD"
 	@echo "  make ccdb        - Rebuild unified compile_commands.json via bear"
 	@echo "  make ccdb-append - Append a build to compile_commands.json and deduplicate"
@@ -324,6 +326,7 @@ run-fpga: _ensure_fpga_payload
 	  FPGA_REMOTE_PAYLOAD="$(FPGA_REMOTE_PAYLOAD)" \
 	  FPGA_LTX="$(FPGA_LTX)" \
 	  FPGA_DRIVER="$(FPGA_DRIVER)" \
+	  FPGA_XDMA_PROCESS="$(FPGA_XDMA_PROCESS)" \
 	  FPGA_TIMEOUT="$(FPGA_TIMEOUT)" \
 	  FPGA_UART_CMD="$(FPGA_UART_CMD)" \
 	  FPGA_PASS_PATTERN="$(FPGA_PASS_PATTERN)" \

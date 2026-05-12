@@ -12,6 +12,7 @@ HOST="${FPGA_HOST:-fpga}"
 REMOTE_PAYLOAD="${FPGA_REMOTE_PAYLOAD:-~/t3.bin}"
 LTX="${FPGA_LTX:-/home/fpga/xsai.ltx}"
 DRIVER="${FPGA_DRIVER:-~/nexus-am/apps/dse-driver-ai/build/dse-driver-ai-riscv64-xs-driver.bin}"
+XDMA_PROCESS="${FPGA_XDMA_PROCESS:-~/ai/xdma_process/build/xdma_process}"
 TIMEOUT="${FPGA_TIMEOUT:-60}"
 UART_CMD="${FPGA_UART_CMD:-}"
 PASS_PATTERN="${FPGA_PASS_PATTERN:-}"
@@ -29,7 +30,7 @@ Usage:
   scripts/fpga-run-ai.sh --reset-only
 
 Environment knobs:
-  FPGA_HOST, FPGA_REMOTE_PAYLOAD, FPGA_LTX, FPGA_DRIVER
+  FPGA_HOST, FPGA_REMOTE_PAYLOAD, FPGA_LTX, FPGA_DRIVER, FPGA_XDMA_PROCESS
   FPGA_TIMEOUT, FPGA_UART_CMD, FPGA_PASS_PATTERN, FPGA_FAIL_PATTERN
   FPGA_PCIE_REMOVE_CMD, FPGA_PCIE_RESCAN_CMD
 EOF
@@ -134,7 +135,7 @@ if [[ -n "$UART_CMD" ]]; then
 fi
 
 echo "[fpga] Running XDMA loader"
-run_remote "sudo ~/ai/xdma_process/build/xdma_process -d ${DRIVER} -i ${REMOTE_PAYLOAD}"
+run_remote "sudo ${XDMA_PROCESS} -d ${DRIVER} -i ${REMOTE_PAYLOAD}"
 
 if [[ "$uart_started" -eq 1 ]]; then
   echo "[fpga] Streaming UART output (timeout=${TIMEOUT}s)"
