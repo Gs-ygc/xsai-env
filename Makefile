@@ -25,16 +25,19 @@ QEMU_PAYLOAD ?= $(GCPT_RESTORE_HOME)/build-qemu/build/gcpt.bin
 NEMU_PAYLOAD ?= $(GCPT_RESTORE_HOME)/build-nemu/build/gcpt.bin
 PAYLOAD ?= $(QEMU_PAYLOAD)
 FPGA_HOST ?= fpga
-FPGA_REMOTE_PAYLOAD ?= ~/t3.bin
+FPGA_REMOTE_PAYLOAD ?=
 FPGA_LTX ?= /home/fpga/xsai.ltx
 FPGA_DRIVER ?= ~/nexus-am/apps/dse-driver-ai/build/dse-driver-ai-riscv64-xs-driver.bin
 FPGA_XDMA_PROCESS ?= ~/ai/xdma_process/build/xdma_process
-FPGA_TIMEOUT ?= 60
+FPGA_TIMEOUT ?= 120
 FPGA_UART_CMD ?=
+FPGA_KILL_UART_READERS ?= 1
 FPGA_PASS_PATTERN ?=
 FPGA_FAIL_PATTERN ?=
 FPGA_PCIE_REMOVE_CMD ?=
 FPGA_PCIE_RESCAN_CMD ?=
+FPGA_REMOTE_SETUP ?= source /tools/Xilinx/Vivado_Lab/2020.2/settings64.sh
+FPGA_REMOTE_SUDO ?=
 QEMU_DTB ?= $(XS_PROJECT_ROOT)/firmware/nemu_board/dts/build/xiangshan_ai.dtb
 RESTORER_BUILD_ROOT := $(GCPT_RESTORE_HOME)/restore-only
 RESTORER := $(RESTORER_BUILD_ROOT)/build/gcpt.bin
@@ -117,8 +120,10 @@ help:
 	@echo "  make run-fpga    - Upload PAYLOAD and execute remote XDMA load/run flow"
 	@echo "                     Knobs: FPGA_HOST FPGA_REMOTE_PAYLOAD FPGA_DRIVER FPGA_LTX"
 	@echo "                            FPGA_XDMA_PROCESS FPGA_TIMEOUT FPGA_UART_CMD"
+	@echo "                            FPGA_KILL_UART_READERS"
 	@echo "                            FPGA_PASS_PATTERN FPGA_FAIL_PATTERN"
 	@echo "                            FPGA_PCIE_REMOVE_CMD FPGA_PCIE_RESCAN_CMD"
+	@echo "                            FPGA_REMOTE_SETUP FPGA_REMOTE_SUDO"
 	@echo "  make ccdb        - Rebuild unified compile_commands.json via bear"
 	@echo "  make ccdb-append - Append a build to compile_commands.json and deduplicate"
 	@echo "  make run-emu-debug PAYLOAD=<p> DIFF=1 WAVE_BEGIN=50000 WAVE_END=180000"
@@ -319,6 +324,7 @@ run-qemu: _ensure_qemu_payload _ensure_qemu _ensure_qemu_dtb _ensure_model_img
 fpga-reset:
 	@FPGA_HOST="$(FPGA_HOST)" \
 	  FPGA_LTX="$(FPGA_LTX)" \
+	  FPGA_REMOTE_SETUP="$(FPGA_REMOTE_SETUP)" \
 	  $(FPGA_RUN_SCRIPT) --reset-only
 
 run-fpga: _ensure_fpga_payload
@@ -329,11 +335,14 @@ run-fpga: _ensure_fpga_payload
 	  FPGA_XDMA_PROCESS="$(FPGA_XDMA_PROCESS)" \
 	  FPGA_TIMEOUT="$(FPGA_TIMEOUT)" \
 	  FPGA_UART_CMD="$(FPGA_UART_CMD)" \
+	  FPGA_KILL_UART_READERS="$(FPGA_KILL_UART_READERS)" \
 	  FPGA_PASS_PATTERN="$(FPGA_PASS_PATTERN)" \
 	  FPGA_FAIL_PATTERN="$(FPGA_FAIL_PATTERN)" \
 	  FPGA_PCIE_REMOVE_CMD="$(FPGA_PCIE_REMOVE_CMD)" \
 	  FPGA_PCIE_RESCAN_CMD="$(FPGA_PCIE_RESCAN_CMD)" \
-	  $(FPGA_RUN_SCRIPT) --payload "$(PAYLOAD)"
+	  FPGA_REMOTE_SETUP="$(FPGA_REMOTE_SETUP)" \
+	  FPGA_REMOTE_SUDO="$(FPGA_REMOTE_SUDO)" \
+	  $(FPGA_RUN_SCRIPT) --payload "$(RUN_NEMU_PAYLOAD)"
 
 # ---------------------------------------------------------------------------
 # SimPoint — init nested submodule (if needed) then build the binary
@@ -439,7 +448,15 @@ _ensure_nemu_payload:
 	 esac
 
 _ensure_fpga_payload:
-	@test -f "$(PAYLOAD)" || { echo "Payload not found: $(PAYLOAD)" >&2; exit 1; }
+	@case "$(RUN_NEMU_PAYLOAD)" in \
+	  "$(NEMU_PAYLOAD)") \
+	    if [ ! -f "$(RUN_NEMU_PAYLOAD)" ]; then \
+	      echo "[payload] NEMU gcpt.bin not found, building nemu firmware payload..."; \
+	      $(MAKE) -C firmware build-gcpt-nemu; \
+	    fi ;; \
+	  *) \
+	    test -f "$(RUN_NEMU_PAYLOAD)" || { echo "Payload not found: $(RUN_NEMU_PAYLOAD)" >&2; exit 1; } ;; \
+	esac
 
 _ensure_firmware:
 	@$(MAKE) _ensure_qemu_payload

@@ -2,23 +2,25 @@
 #
 # FPGA run helper for xsai-env.
 # Inspired by OpenXiangShan/env-scripts and OpenXiangShan/minjie-playground FPGA flows.
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 XS_PROJECT_ROOT="${XS_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 HOST="${FPGA_HOST:-fpga}"
-REMOTE_PAYLOAD="${FPGA_REMOTE_PAYLOAD:-~/t3.bin}"
+REMOTE_PAYLOAD="${FPGA_REMOTE_PAYLOAD:-}"
 LTX="${FPGA_LTX:-/home/fpga/xsai.ltx}"
 DRIVER="${FPGA_DRIVER:-~/nexus-am/apps/dse-driver-ai/build/dse-driver-ai-riscv64-xs-driver.bin}"
 XDMA_PROCESS="${FPGA_XDMA_PROCESS:-~/ai/xdma_process/build/xdma_process}"
-TIMEOUT="${FPGA_TIMEOUT:-60}"
+TIMEOUT="${FPGA_TIMEOUT:-120}"
+REMOTE_SUDO="${FPGA_REMOTE_SUDO-}"
 UART_CMD="${FPGA_UART_CMD:-}"
+KILL_UART_READERS="${FPGA_KILL_UART_READERS:-1}"
 PASS_PATTERN="${FPGA_PASS_PATTERN:-}"
 FAIL_PATTERN="${FPGA_FAIL_PATTERN:-}"
 PCIE_REMOVE_CMD="${FPGA_PCIE_REMOVE_CMD:-}"
 PCIE_RESCAN_CMD="${FPGA_PCIE_RESCAN_CMD:-}"
+REMOTE_SETUP="${FPGA_REMOTE_SETUP:-source /tools/Xilinx/Vivado_Lab/2020.2/settings64.sh}"
 
 RESET_ONLY=0
 PAYLOAD=""
@@ -31,8 +33,8 @@ Usage:
 
 Environment knobs:
   FPGA_HOST, FPGA_REMOTE_PAYLOAD, FPGA_LTX, FPGA_DRIVER, FPGA_XDMA_PROCESS
-  FPGA_TIMEOUT, FPGA_UART_CMD, FPGA_PASS_PATTERN, FPGA_FAIL_PATTERN
-  FPGA_PCIE_REMOVE_CMD, FPGA_PCIE_RESCAN_CMD
+  FPGA_TIMEOUT, FPGA_UART_CMD, FPGA_KILL_UART_READERS, FPGA_PASS_PATTERN, FPGA_FAIL_PATTERN
+  FPGA_PCIE_REMOVE_CMD, FPGA_PCIE_RESCAN_CMD, FPGA_REMOTE_SETUP, FPGA_REMOTE_SUDO
 EOF
 }
 
@@ -70,6 +72,19 @@ run_remote() {
   ssh "$HOST" "bash -lc $(printf '%q' "$cmd")"
 }
 
+run_remote_with_setup() {
+  local cmd="$1"
+  run_remote "${REMOTE_SETUP}; ${cmd}"
+}
+
+with_remote_sudo() {
+  if [[ -n "$REMOTE_SUDO" ]]; then
+    printf '%s %s' "$REMOTE_SUDO" "$*"
+  else
+    printf '%s' "$*"
+  fi
+}
+
 require_cmd ssh
 require_cmd scp
 
@@ -82,6 +97,16 @@ RESET_TCL_LOCAL="$XS_PROJECT_ROOT/scripts/fpga/reset_cpu.tcl"
 [[ -f "$RESET_TCL_LOCAL" ]] || { echo "Missing reset helper: $RESET_TCL_LOCAL" >&2; exit 1; }
 
 run_id="$(date +%Y%m%d-%H%M%S)-$$"
+if [[ -z "$REMOTE_PAYLOAD" ]]; then
+  payload_ext="${PAYLOAD##*.}"
+  if [[ "$payload_ext" == "$PAYLOAD" ]]; then
+    payload_ext="bin"
+  fi
+  REMOTE_PAYLOAD="/tmp/xsai-payload-${run_id}.${payload_ext}"
+fi
+if [[ -z "$UART_CMD" ]]; then
+  UART_CMD="$(with_remote_sudo '~/xdma_work/tools/proto/pcie-util' /dev/xdma0_user uart 0x10000)"
+fi
 remote_tcl="/tmp/xsai-reset-cpu-${run_id}.tcl"
 remote_uart_log="/tmp/xsai-fpga-uart-${run_id}.log"
 remote_uart_pid="/tmp/xsai-fpga-uart-${run_id}.pid"
@@ -96,13 +121,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-reset_cpu() {
+set_reset_vio() {
+  local value="$1"
   echo "[fpga] Uploading reset helper to ${HOST}:${remote_tcl}"
   scp "$RESET_TCL_LOCAL" "${HOST}:${remote_tcl}"
 
-  echo "[fpga] Resetting CPU via Vivado with LTX: ${LTX}"
+  echo "[fpga] Setting reset VIO to ${value} via Vivado with LTX: ${LTX}"
   run_remote "test -f ${LTX}"
-  run_remote "vivado -mode batch -source ${remote_tcl} -tclargs ${LTX}"
+  run_remote_with_setup "vivado -mode batch -source ${remote_tcl} -tclargs ${LTX} ${value}"
 }
 
 if [[ "$RESET_ONLY" -eq 0 ]]; then
@@ -110,7 +136,7 @@ if [[ "$RESET_ONLY" -eq 0 ]]; then
   scp "$PAYLOAD" "${HOST}:${REMOTE_PAYLOAD}"
 fi
 
-reset_cpu
+set_reset_vio 1
 
 if [[ -n "$PCIE_REMOVE_CMD" ]]; then
   echo "[fpga] Running optional PCIe remove hook"
@@ -127,15 +153,21 @@ if [[ "$RESET_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
+echo "[fpga] Running XDMA loader"
+run_remote "$(with_remote_sudo "${XDMA_PROCESS}" -i "${REMOTE_PAYLOAD}" -d "${DRIVER}")"
+
 if [[ -n "$UART_CMD" ]]; then
   mkdir -p "$XS_PROJECT_ROOT/log"
+  if [[ "$KILL_UART_READERS" -eq 1 ]]; then
+    echo "[fpga] Killing stale UART readers on ${HOST}"
+    run_remote "pkill -f '[p]cie-util .*uart' >/dev/null 2>&1 || true"
+  fi
   echo "[fpga] Starting UART capture on ${HOST}"
   run_remote "rm -f ${remote_uart_log} ${remote_uart_pid}; nohup bash -lc $(printf '%q' "$UART_CMD") > ${remote_uart_log} 2>&1 & echo \$! > ${remote_uart_pid}"
   uart_started=1
 fi
 
-echo "[fpga] Running XDMA loader"
-run_remote "sudo ${XDMA_PROCESS} -d ${DRIVER} -i ${REMOTE_PAYLOAD}"
+set_reset_vio 0
 
 if [[ "$uart_started" -eq 1 ]]; then
   echo "[fpga] Streaming UART output (timeout=${TIMEOUT}s)"
@@ -143,7 +175,9 @@ if [[ "$uart_started" -eq 1 ]]; then
   ssh "$HOST" "timeout ${TIMEOUT}s tail -n +1 -F ${remote_uart_log}" | tee "$local_uart_log"
   tail_rc=${PIPESTATUS[0]}
   set -e
-  if [[ "$tail_rc" -ne 0 && "$tail_rc" -ne 124 ]]; then
+  if [[ "$tail_rc" -eq 124 ]]; then
+    echo "[fpga] UART observation window expired after ${TIMEOUT}s; workload may still be running"
+  elif [[ "$tail_rc" -ne 0 ]]; then
     echo "[fpga] UART tail failed with exit code ${tail_rc}" >&2
     exit "$tail_rc"
   fi
