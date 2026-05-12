@@ -130,6 +130,8 @@ Notes:
 make firmware        # Build rootfs, Linux, DTB, QEMU/NEMU GCPT payloads, and restore-only GCPT
 make run-qemu        # Boot the default QEMU flow with the GCPT payload
 make run-nemu        # Run the GCPT payload on NEMU
+make fpga-reset      # Reset FPGA CPU on remote host through Vivado/VIO (no bitstream programming)
+make run-fpga        # Upload PAYLOAD and execute XDMA-based FPGA run on remote host
 make test-matrix     # Build and run the AME matrix simple test
 ```
 
@@ -138,6 +140,9 @@ Notes:
 - `make run-qemu` is the main end-to-end validation path for this repo.
 - `MODEL_IMG=/path/to/disk.img make run-qemu` attaches a virtio block device.
 - `make run-qemu` and `make run-nemu` auto-build missing payload pieces such as QEMU, DTB, or GCPT binaries when needed.
+- `make run-fpga PAYLOAD=firmware/gcpt_restore/build-nemu/build/gcpt.bin` runs the XDMA FPGA flow against a preconfigured remote board.
+- `make run-fpga` does not build or write bitstreams; it uses `FPGA_LTX` for Vivado VIO reset and then runs remote `xdma_process`.
+- Optional FPGA knobs: `FPGA_HOST`, `FPGA_REMOTE_PAYLOAD`, `FPGA_DRIVER`, `FPGA_XDMA_PROCESS`, `FPGA_LTX`, `FPGA_TIMEOUT`, `FPGA_UART_CMD`, `FPGA_PASS_PATTERN`, `FPGA_FAIL_PATTERN`, `FPGA_PCIE_REMOVE_CMD`, `FPGA_PCIE_RESCAN_CMD`.
 - `make run-user` exists, but it is currently a local `llama.cpp` convenience target with a hard-coded model path and should not be treated as a general validation entrypoint.
 
 ### Analysis and maintenance
