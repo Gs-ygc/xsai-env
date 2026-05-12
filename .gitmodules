@@ -59,3 +59,7 @@
 	path = docs/CUTE-Design-Doc
 	url = https://github.com/OpenCUTE/CUTE-Design-Doc.git
 	branch = master
+[submodule "tools/TMA-toolkit"]
+	path = tools/TMA-toolkit
+	url = https://github.com/OurCompArchGroup/TMA-toolkit.git
+	branch = main
