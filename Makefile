@@ -1,4 +1,4 @@
-.PHONY: help deps init init-force llvm gsim nix-shell nix-init nix-test smoke test-smoke nix-smoke update test clean distclean nemu xsai test-matrix qemu run-qemu firmware versions simpoint profile cluster ckpt uniform ccdb ccdb-append pldm _ensure_qemu _ensure_qemu_user _ensure_qemu_plugin _ensure_firmware _ensure_qemu_dtb _ensure_xsai_init docker-nemu-image nemu-matrix-ref-so-docker
+.PHONY: help deps init init-force llvm gsim nix-shell nix-init nix-test smoke test-smoke nix-smoke update test clean distclean nemu xsai test-matrix qemu run-qemu run-fpga fpga-reset firmware versions simpoint profile cluster ckpt uniform ccdb ccdb-append pldm _ensure_qemu _ensure_qemu_user _ensure_qemu_plugin _ensure_firmware _ensure_qemu_dtb _ensure_xsai_init _ensure_fpga_payload docker-nemu-image nemu-matrix-ref-so-docker
 
 SHELL := /bin/bash
 
@@ -24,10 +24,21 @@ NIX_DEVELOP ?= nix develop $(NIX_DEVSHELL) -c
 QEMU_PAYLOAD ?= $(GCPT_RESTORE_HOME)/build-qemu/build/gcpt.bin
 NEMU_PAYLOAD ?= $(GCPT_RESTORE_HOME)/build-nemu/build/gcpt.bin
 PAYLOAD ?= $(QEMU_PAYLOAD)
+FPGA_HOST ?= fpga
+FPGA_REMOTE_PAYLOAD ?= ~/t3.bin
+FPGA_LTX ?= /home/fpga/xsai.ltx
+FPGA_DRIVER ?= ~/nexus-am/apps/dse-driver-ai/build/dse-driver-ai-riscv64-xs-driver.bin
+FPGA_TIMEOUT ?= 60
+FPGA_UART_CMD ?=
+FPGA_PASS_PATTERN ?=
+FPGA_FAIL_PATTERN ?=
+FPGA_PCIE_REMOVE_CMD ?=
+FPGA_PCIE_RESCAN_CMD ?=
 QEMU_DTB ?= $(XS_PROJECT_ROOT)/firmware/nemu_board/dts/build/xiangshan_ai.dtb
 RESTORER_BUILD_ROOT := $(GCPT_RESTORE_HOME)/restore-only
 RESTORER := $(RESTORER_BUILD_ROOT)/build/gcpt.bin
 RUN_NEMU_PAYLOAD = $(if $(filter $(QEMU_PAYLOAD),$(PAYLOAD)),$(NEMU_PAYLOAD),$(PAYLOAD))
+FPGA_RUN_SCRIPT := ./scripts/fpga-run-ai.sh
 
 # Canonical QEMU CPU flags — keep in sync with scripts/checkpoint.sh CPU_FLAGS
 QEMU_CPU_FLAGS ?= rv64,v=true,vlen=128,h=true,sstc=true,svpbmt=true,zvfh=true,zvfhmin=true,x-matrix=true,rlen=512,mlen=65536,melen=32,sv39=true,sv48=true,sv57=false,sv64=false
@@ -101,6 +112,11 @@ help:
 	@echo "  make test        - Test the environment"
 	@echo "  make run-qemu    - Run QEMU simulation with GCPT payload"
 	@echo "                     Optional: MODEL_IMG=<path/to/disk.img> attaches /dev/vda via virtio-blk"
+	@echo "  make fpga-reset  - Reset FPGA CPU via remote Vivado/VIO using FPGA_LTX"
+	@echo "  make run-fpga    - Upload PAYLOAD and execute remote XDMA load/run flow"
+	@echo "                     Knobs: FPGA_HOST FPGA_REMOTE_PAYLOAD FPGA_DRIVER FPGA_LTX"
+	@echo "                            FPGA_TIMEOUT FPGA_UART_CMD FPGA_PASS_PATTERN FPGA_FAIL_PATTERN"
+	@echo "                            FPGA_PCIE_REMOVE_CMD FPGA_PCIE_RESCAN_CMD"
 	@echo "  make ccdb        - Rebuild unified compile_commands.json via bear"
 	@echo "  make ccdb-append - Append a build to compile_commands.json and deduplicate"
 	@echo "  make run-emu-debug PAYLOAD=<p> DIFF=1 WAVE_BEGIN=50000 WAVE_END=180000"
@@ -298,6 +314,24 @@ run-qemu: _ensure_qemu_payload _ensure_qemu _ensure_qemu_dtb _ensure_model_img
 	"$$@"
 	@echo "✓ QEMU simulation completed"
 
+fpga-reset:
+	@FPGA_HOST="$(FPGA_HOST)" \
+	  FPGA_LTX="$(FPGA_LTX)" \
+	  $(FPGA_RUN_SCRIPT) --reset-only
+
+run-fpga: _ensure_fpga_payload
+	@FPGA_HOST="$(FPGA_HOST)" \
+	  FPGA_REMOTE_PAYLOAD="$(FPGA_REMOTE_PAYLOAD)" \
+	  FPGA_LTX="$(FPGA_LTX)" \
+	  FPGA_DRIVER="$(FPGA_DRIVER)" \
+	  FPGA_TIMEOUT="$(FPGA_TIMEOUT)" \
+	  FPGA_UART_CMD="$(FPGA_UART_CMD)" \
+	  FPGA_PASS_PATTERN="$(FPGA_PASS_PATTERN)" \
+	  FPGA_FAIL_PATTERN="$(FPGA_FAIL_PATTERN)" \
+	  FPGA_PCIE_REMOVE_CMD="$(FPGA_PCIE_REMOVE_CMD)" \
+	  FPGA_PCIE_RESCAN_CMD="$(FPGA_PCIE_RESCAN_CMD)" \
+	  $(FPGA_RUN_SCRIPT) --payload "$(PAYLOAD)"
+
 # ---------------------------------------------------------------------------
 # SimPoint — init nested submodule (if needed) then build the binary
 # ---------------------------------------------------------------------------
@@ -400,6 +434,9 @@ _ensure_nemu_payload:
 	  *) \
 	    test -f "$(RUN_NEMU_PAYLOAD)" || { echo "Payload not found: $(RUN_NEMU_PAYLOAD)" >&2; exit 1; } ;; \
 	 esac
+
+_ensure_fpga_payload:
+	@test -f "$(PAYLOAD)" || { echo "Payload not found: $(PAYLOAD)" >&2; exit 1; }
 
 _ensure_firmware:
 	@$(MAKE) _ensure_qemu_payload
